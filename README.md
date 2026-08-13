@@ -34,7 +34,6 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `claude-sonnet` / `claude-sonnet-5` / `anthropic.claude-sonnet-5` | `anthropic.claude-sonnet-5` | Converse |
 | `us.anthropic.claude-sonnet-5` | US geo inference profile | Converse |
 | `claude-sonnet-4` | `us.anthropic.claude-sonnet-4-20250514-v1:0` | Converse |
-| `claude-opus` / `claude-opus-4.5` | `us.anthropic.claude-opus-4-5-20251101-v1:0` | Converse |
 | `nova-pro` / `amazon.nova-pro-v1:0` | `amazon.nova-pro-v1:0` | Converse |
 | `us.amazon.nova-pro-v1:0` | US geo inference profile | Converse |
 | `nova-lite` / `amazon.nova-lite-v1:0` | `amazon.nova-lite-v1:0` | Converse |
@@ -47,9 +46,28 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `deepseek` / `deepseek.v3.2` | `deepseek.v3.2` | Converse |
 | `deepseek-r1` | `us.deepseek.r1-v1:0` | Converse |
 | `qwen3-next-80b-a3b` / `qwen.qwen3-next-80b-a3b` | `qwen.qwen3-next-80b-a3b` | Converse |
+| `ministral-3b` / `ministral-3-3b` | `mistral.ministral-3-3b-instruct` | Converse |
+| `ministral-8b` / `ministral-3-8b` | `mistral.ministral-3-8b-instruct` | Converse |
+| `ministral-14b` / `ministral-3-14b` | `mistral.ministral-3-14b-instruct` | Converse |
+| `gemma-3-4b` / `gemma-3-4b-it` | `google.gemma-3-4b-it` | Converse |
+| `gemma-3-12b` / `gemma-3-12b-it` | `google.gemma-3-12b-it` | Converse |
+| `gemma-3-27b` / `gemma-3-27b-it` | `google.gemma-3-27b-it` | Converse |
+| `qwen3-32b` / `Qwen/Qwen3-32B` | `qwen.qwen3-32b-v1:0` | Converse |
 | `Qwen/Qwen2.5-7B-Instruct` / `qwen` | deployed `MODEL_ID` when it is an imported-model ARN | InvokeModel |
 
 Raw Bedrock IDs and imported-model ARNs are also accepted. Unknown names return `400`.
+
+Recommended open models (us-east-1, Bedrock Runtime):
+
+| Model | 参数量 | Alias | Bedrock ID | us-east-1 | Bedrock Runtime | 推荐度 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ministral 3 3B | 3B | `ministral-3b` | `mistral.ministral-3-3b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐ |
+| Gemma 3 4B IT | 4B | `gemma-3-4b` | `google.gemma-3-4b-it` | ✅ | ✅ | ⭐⭐⭐ |
+| Ministral 3 8B | 8B | `ministral-8b` | `mistral.ministral-3-8b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
+| Gemma 3 12B IT | 12B | `gemma-3-12b` | `google.gemma-3-12b-it` | ✅ | ✅ | ⭐⭐⭐⭐ |
+| Ministral 3 14B | 14B | `ministral-14b` | `mistral.ministral-3-14b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
+| Gemma 3 27B | 27B | `gemma-3-27b` | `google.gemma-3-27b-it` | ✅ | ✅ | ⭐⭐⭐ |
+| Qwen3 32B | 32B | `qwen3-32b` | `qwen.qwen3-32b-v1:0` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
 
 Override or add aliases with the `MODEL_MAP` env / repo variable, e.g.:
 
@@ -122,25 +140,6 @@ Enable model access, then call (friendly alias defaults to the **US geo** infere
 | In-region | `anthropic.claude-sonnet-4-20250514-v1:0` |
 | US geo cross-region (default alias) | `us.anthropic.claude-sonnet-4-20250514-v1:0` |
 | Global | `global.anthropic.claude-sonnet-4-20250514-v1:0` |
-
-### Claude Opus 4.5 (marketplace)
-
-Enable model access, then call (friendly aliases default to the **US geo** inference profile):
-
-```json
-{"model": "claude-opus-4.5", "messages": [{"role": "user", "content": "Hello"}]}
-```
-
-```bash
-./scripts/upload-model-to-s3.sh claude-opus
-# → s3://bedrock-models-646821141010/anthropic/claude-opus-4-5/model-manifest.json
-```
-
-| Mode | Bedrock ID |
-| --- | --- |
-| In-region | `anthropic.claude-opus-4-5-20251101-v1:0` |
-| US geo cross-region (default alias) | `us.anthropic.claude-opus-4-5-20251101-v1:0` |
-| Global | `global.anthropic.claude-opus-4-5-20251101-v1:0` |
 
 ### Meta Llama (marketplace)
 
@@ -234,6 +233,38 @@ No geo inference profiles (in-region only). Distinct from the custom-imported `Q
 # → s3://bedrock-models-646821141010/qwen/qwen3-next-80b-a3b/model-manifest.json
 ```
 
+### Ministral 3 / Gemma 3 / Qwen3 32B (marketplace)
+
+Fully managed open-weight models on Bedrock (Converse). Enable access in `us-east-1`, then call:
+
+```json
+{"model": "ministral-8b", "messages": [{"role": "user", "content": "Hello"}]}
+{"model": "gemma-3-12b", "messages": [{"role": "user", "content": "Hello"}]}
+{"model": "qwen3-32b", "messages": [{"role": "user", "content": "Hello"}]}
+```
+
+| Alias | Bedrock ID |
+| --- | --- |
+| `ministral-3b` | `mistral.ministral-3-3b-instruct` |
+| `ministral-8b` | `mistral.ministral-3-8b-instruct` |
+| `ministral-14b` | `mistral.ministral-3-14b-instruct` |
+| `gemma-3-4b` | `google.gemma-3-4b-it` |
+| `gemma-3-12b` | `google.gemma-3-12b-it` |
+| `gemma-3-27b` | `google.gemma-3-27b-it` |
+| `qwen3-32b` | `qwen.qwen3-32b-v1:0` |
+
+No geo inference profiles (in-region only).
+
+```bash
+./scripts/upload-model-to-s3.sh ministral-3b
+./scripts/upload-model-to-s3.sh ministral-8b
+./scripts/upload-model-to-s3.sh ministral-14b
+./scripts/upload-model-to-s3.sh gemma-3-4b
+./scripts/upload-model-to-s3.sh gemma-3-12b
+./scripts/upload-model-to-s3.sh gemma-3-27b
+./scripts/upload-model-to-s3.sh qwen3-32b
+```
+
 ### Custom import (e.g. Qwen2.5)
 
 Qwen2.5 is not a built-in Bedrock marketplace ID. Download Hugging Face weights, upload to S3, then [Custom Model Import](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html). Set `MODEL_ID` to the **imported model ARN** (also used for the `Qwen/Qwen2.5-7B-Instruct` alias).
@@ -245,16 +276,18 @@ s3://bedrock-models-646821141010/
   qwen/Qwen2.5-7B-Instruct/   ← config.json must live here
   anthropic/claude-sonnet-5/  ← marketplace manifest (no HF weights)
   anthropic/claude-sonnet-4/  ← marketplace manifest (no HF weights)
-  anthropic/claude-opus-4-5/  ← marketplace manifest (no HF weights)
   amazon/nova-pro-v1/         ← marketplace manifest (no HF weights)
   meta/llama3-3-70b-instruct/ ← marketplace manifest (no HF weights)
   openai/gpt-oss-120b/        ← marketplace manifest (no HF weights)
   openai/gpt-5.5/             ← marketplace manifest (mantle Responses)
   deepseek/deepseek-v3.2/     ← marketplace manifest (no HF weights)
   qwen/qwen3-next-80b-a3b/    ← marketplace manifest (no HF weights)
+  mistral/ministral-3-*-instruct/ ← marketplace manifests
+  google/gemma-3-*-it/        ← marketplace manifests
+  qwen/qwen3-32b/             ← marketplace manifest
 ```
 
-Marketplace Claude/Nova/Meta/OpenAI/DeepSeek/Qwen3-Next models are enabled in the Bedrock console — they are not stored as HF weights in this bucket.
+Marketplace Claude/Nova/Meta/OpenAI/DeepSeek/Qwen3/Ministral/Gemma models are enabled in the Bedrock console — they are not stored as HF weights in this bucket.
 
 #### 1. Download and upload Qwen2.5-7B-Instruct
 
@@ -487,20 +520,6 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   }' | jq '{model, answer: .choices[0].message.content, usage}'
 ```
 
-Claude Opus 4.5 (marketplace):
-
-```bash
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-opus-4.5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{model, answer: .choices[0].message.content, usage}'
-```
-
 DeepSeek V3.2 (marketplace):
 
 ```bash
@@ -523,6 +542,48 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
   -d '{
     "model": "qwen3-next-80b-a3b",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{model, answer: .choices[0].message.content, usage}'
+```
+
+Ministral 3 8B (marketplace):
+
+```bash
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "ministral-8b",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{model, answer: .choices[0].message.content, usage}'
+```
+
+Gemma 3 12B IT (marketplace):
+
+```bash
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "gemma-3-12b",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{model, answer: .choices[0].message.content, usage}'
+```
+
+Qwen3 32B (marketplace):
+
+```bash
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "qwen3-32b",
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0

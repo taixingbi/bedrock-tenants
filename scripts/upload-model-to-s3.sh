@@ -3,48 +3,56 @@
 #
 # Usage:
 #   ./scripts/upload-model-to-s3.sh claude-sonnet
-#   ./scripts/upload-model-to-s3.sh claude-sonnet-4
-#   ./scripts/upload-model-to-s3.sh claude-opus
-#   ./scripts/upload-model-to-s3.sh nova-pro
-#   ./scripts/upload-model-to-s3.sh llama
-#   ./scripts/upload-model-to-s3.sh gpt-oss
-#   ./scripts/upload-model-to-s3.sh gpt-5.5
-#   ./scripts/upload-model-to-s3.sh deepseek
-#   ./scripts/upload-model-to-s3.sh qwen3-next-80b-a3b
-#   ./scripts/upload-model-to-s3.sh qwen
+#   ./scripts/upload-model-to-s3.sh ministral-8b
 #   ./scripts/upload-model-to-s3.sh qwen --local ./Qwen2.5-7B-Instruct
 #
 # Env overrides:
 #   BUCKET      default s3://bedrock-models-646821141010
 #   AWS_REGION  default us-east-1
+#   MODEL_ID, MODEL_NAME, US_PROFILE, GLOBAL_PROFILE
 set -euo pipefail
 
 BUCKET="${BUCKET:-s3://bedrock-models-646821141010}"
 REGION="${AWS_REGION:-us-east-1}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Catalog: key1|key2|...|display|provider|name|id|aliases|profiles
+# profiles: none | us | us+global  (last 6 fields are fixed; earlier fields are lookup keys)
+MARKETPLACE_MODELS=(
+  'claude-sonnet|claude-sonnet-5|Claude Sonnet|anthropic|claude-sonnet-5|anthropic.claude-sonnet-5|claude-sonnet, claude-sonnet-5, anthropic.claude-sonnet-5|us+global'
+  'claude-sonnet-4|Claude Sonnet 4|anthropic|claude-sonnet-4|anthropic.claude-sonnet-4-20250514-v1:0|claude-sonnet-4, us.anthropic.claude-sonnet-4-20250514-v1:0|us+global'
+  'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
+  'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
+  'gpt-oss|gpt-oss-120b|OpenAI GPT-OSS 120B|openai|gpt-oss-120b|openai.gpt-oss-120b-1:0|gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0|none'
+  'gpt-5.5|gpt-5-5|OpenAI GPT-5.5|openai|gpt-5.5|openai.gpt-5.5|gpt-5.5, gpt-5-5, openai.gpt-5.5|none'
+  'deepseek|deepseek-v3.2|DeepSeek V3.2|deepseek|deepseek-v3.2|deepseek.v3.2|deepseek, deepseek-v3.2, deepseek.v3.2|none'
+  'qwen3-next-80b-a3b|Qwen3 Next 80B A3B|qwen|qwen3-next-80b-a3b|qwen.qwen3-next-80b-a3b|qwen3-next-80b-a3b, qwen.qwen3-next-80b-a3b|none'
+  'ministral-3b|ministral-3-3b|Ministral 3 3B|mistral|ministral-3-3b-instruct|mistral.ministral-3-3b-instruct|ministral-3b, ministral-3-3b, mistral.ministral-3-3b-instruct|none'
+  'ministral-8b|ministral-3-8b|Ministral 3 8B|mistral|ministral-3-8b-instruct|mistral.ministral-3-8b-instruct|ministral-8b, ministral-3-8b, mistral.ministral-3-8b-instruct|none'
+  'ministral-14b|ministral-3-14b|Ministral 3 14B|mistral|ministral-3-14b-instruct|mistral.ministral-3-14b-instruct|ministral-14b, ministral-3-14b, mistral.ministral-3-14b-instruct|none'
+  'gemma-3-4b|gemma-3-4b-it|Gemma 3 4B IT|google|gemma-3-4b-it|google.gemma-3-4b-it|gemma-3-4b, gemma-3-4b-it, google.gemma-3-4b-it|none'
+  'gemma-3-12b|gemma-3-12b-it|Gemma 3 12B IT|google|gemma-3-12b-it|google.gemma-3-12b-it|gemma-3-12b, gemma-3-12b-it, google.gemma-3-12b-it|none'
+  'gemma-3-27b|gemma-3-27b-it|Gemma 3 27B IT|google|gemma-3-27b-it|google.gemma-3-27b-it|gemma-3-27b, gemma-3-27b-it, google.gemma-3-27b-it|none'
+  'qwen3-32b|Qwen3 32B|qwen|qwen3-32b|qwen.qwen3-32b-v1:0|qwen3-32b, qwen.qwen3-32b-v1:0, Qwen/Qwen3-32B|none'
+)
+
 usage() {
   cat <<'EOF'
 Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
-  claude-sonnet   Register marketplace manifest (no HF weights)
-  claude-sonnet-4 Register Claude Sonnet 4 marketplace manifest
-  claude-opus     Register Claude Opus 4.5 marketplace manifest
-  nova-pro        Register marketplace manifest (no HF weights)
-  llama           Register Meta Llama 3.3 70B marketplace manifest
-  gpt-oss         Register OpenAI GPT-OSS 120B marketplace manifest
-  gpt-5.5         Register OpenAI GPT-5.5 marketplace manifest (mantle)
-  deepseek        Register DeepSeek V3.2 marketplace manifest
-  qwen3-next-80b-a3b  Register Qwen3 Next 80B A3B marketplace manifest
+  claude-sonnet / claude-sonnet-4
+  nova-pro / llama / gpt-oss / gpt-5.5 / deepseek
+  qwen3-next-80b-a3b / qwen3-32b
+  ministral-3b / ministral-8b / ministral-14b
+  gemma-3-4b / gemma-3-12b / gemma-3-27b
   qwen            Download Qwen2.5-7B-Instruct (unless --local) and s3 sync
 
 Options (qwen):
   --local DIR     Sync existing local weights instead of hf download
 
 Env:
-  BUCKET, AWS_REGION
-  MODEL_ID, MODEL_NAME (marketplace models)
+  BUCKET, AWS_REGION, MODEL_ID, MODEL_NAME, US_PROFILE, GLOBAL_PROFILE
 EOF
 }
 
@@ -55,7 +63,6 @@ require_aws() {
 }
 
 # Register a Bedrock marketplace model catalog entry (no weights).
-# Args: display_name provider prefix_name model_id request_aliases_csv [us_profile] [global_profile|""]
 upload_marketplace_manifest() {
   require_aws
 
@@ -70,7 +77,7 @@ upload_marketplace_manifest() {
 
   local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
+  trap 'rm -rf "${tmp:-}"' RETURN
 
   local profiles
   if [[ -n "${us_profile}" && -n "${global_profile}" ]]; then
@@ -127,121 +134,58 @@ EOF
   aws s3 ls "${BUCKET}/${prefix}/" --region "${REGION}"
 }
 
-upload_claude_sonnet() {
-  local model_name="${MODEL_NAME:-claude-sonnet-5}"
-  local model_id="${MODEL_ID:-anthropic.claude-sonnet-5}"
-  upload_marketplace_manifest \
-    "Claude Sonnet" \
-    "anthropic" \
-    "${model_name}" \
-    "${model_id}" \
-    "claude-sonnet, claude-sonnet-5, anthropic.claude-sonnet-5" \
-    "${US_PROFILE:-us.${model_id}}" \
-    "${GLOBAL_PROFILE:-global.${model_id}}"
-}
+# Parse catalog row: keys|display|provider|name|id|aliases|profiles
+# Some rows encode extra keys in the first field with | separators before display.
+# Format (fixed): key1|key2|...|display|provider|name|id|aliases|profiles
+# We detect by counting: last 6 fields are fixed; earlier fields are keys.
+lookup_marketplace() {
+  local want="$1"
+  local row keys_and_meta display provider name id aliases profiles
+  local -a fields keys
 
-upload_claude_sonnet_4() {
-  local model_name="${MODEL_NAME:-claude-sonnet-4}"
-  local model_id="${MODEL_ID:-anthropic.claude-sonnet-4-20250514-v1:0}"
-  upload_marketplace_manifest \
-    "Claude Sonnet 4" \
-    "anthropic" \
-    "${model_name}" \
-    "${model_id}" \
-    "claude-sonnet-4, us.anthropic.claude-sonnet-4-20250514-v1:0" \
-    "${US_PROFILE:-us.${model_id}}" \
-    "${GLOBAL_PROFILE:-global.${model_id}}"
-}
+  for row in "${MARKETPLACE_MODELS[@]}"; do
+    IFS='|' read -r -a fields <<<"${row}"
+    local n="${#fields[@]}"
+    (( n >= 7 )) || continue
 
-upload_claude_opus() {
-  local model_name="${MODEL_NAME:-claude-opus-4-5}"
-  local model_id="${MODEL_ID:-anthropic.claude-opus-4-5-20251101-v1:0}"
-  upload_marketplace_manifest \
-    "Claude Opus 4.5" \
-    "anthropic" \
-    "${model_name}" \
-    "${model_id}" \
-    "claude-opus, claude-opus-4.5, claude-opus-4-5, us.anthropic.claude-opus-4-5-20251101-v1:0" \
-    "${US_PROFILE:-us.${model_id}}" \
-    "${GLOBAL_PROFILE:-global.${model_id}}"
-}
+    profiles="${fields[$((n - 1))]}"
+    aliases="${fields[$((n - 2))]}"
+    id="${fields[$((n - 3))]}"
+    name="${fields[$((n - 4))]}"
+    provider="${fields[$((n - 5))]}"
+    display="${fields[$((n - 6))]}"
+    keys=("${fields[@]:0:$((n - 6))}")
 
-upload_nova_pro() {
-  local model_name="${MODEL_NAME:-nova-pro-v1}"
-  local model_id="${MODEL_ID:-amazon.nova-pro-v1:0}"
-  upload_marketplace_manifest \
-    "Amazon Nova Pro" \
-    "amazon" \
-    "${model_name}" \
-    "${model_id}" \
-    "nova-pro, amazon.nova-pro-v1:0" \
-    "${US_PROFILE:-us.${model_id}}" \
-    ""
-}
-
-upload_llama() {
-  local model_name="${MODEL_NAME:-llama3-3-70b-instruct}"
-  local model_id="${MODEL_ID:-meta.llama3-3-70b-instruct-v1:0}"
-  upload_marketplace_manifest \
-    "Meta Llama 3.3 70B Instruct" \
-    "meta" \
-    "${model_name}" \
-    "${model_id}" \
-    "llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0" \
-    "${US_PROFILE:-us.${model_id}}" \
-    ""
-}
-
-upload_gpt_oss() {
-  local model_name="${MODEL_NAME:-gpt-oss-120b}"
-  local model_id="${MODEL_ID:-openai.gpt-oss-120b-1:0}"
-  upload_marketplace_manifest \
-    "OpenAI GPT-OSS 120B" \
-    "openai" \
-    "${model_name}" \
-    "${model_id}" \
-    "gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0" \
-    "" \
-    ""
-}
-
-upload_gpt_55() {
-  local model_name="${MODEL_NAME:-gpt-5.5}"
-  local model_id="${MODEL_ID:-openai.gpt-5.5}"
-  upload_marketplace_manifest \
-    "OpenAI GPT-5.5" \
-    "openai" \
-    "${model_name}" \
-    "${model_id}" \
-    "gpt-5.5, gpt-5-5, openai.gpt-5.5" \
-    "" \
-    ""
-}
-
-upload_deepseek() {
-  local model_name="${MODEL_NAME:-deepseek-v3.2}"
-  local model_id="${MODEL_ID:-deepseek.v3.2}"
-  upload_marketplace_manifest \
-    "DeepSeek V3.2" \
-    "deepseek" \
-    "${model_name}" \
-    "${model_id}" \
-    "deepseek, deepseek-v3.2, deepseek.v3.2" \
-    "" \
-    ""
-}
-
-upload_qwen3_next() {
-  local model_name="${MODEL_NAME:-qwen3-next-80b-a3b}"
-  local model_id="${MODEL_ID:-qwen.qwen3-next-80b-a3b}"
-  upload_marketplace_manifest \
-    "Qwen3 Next 80B A3B" \
-    "qwen" \
-    "${model_name}" \
-    "${model_id}" \
-    "qwen3-next-80b-a3b, qwen.qwen3-next-80b-a3b" \
-    "" \
-    ""
+    local key
+    for key in "${keys[@]}" "$id"; do
+      if [[ "${key}" == "${want}" ]]; then
+        local model_name="${MODEL_NAME:-${name}}"
+        local model_id="${MODEL_ID:-${id}}"
+        local us_profile="" global_profile=""
+        case "${profiles}" in
+          us+global)
+            us_profile="${US_PROFILE:-us.${model_id}}"
+            global_profile="${GLOBAL_PROFILE:-global.${model_id}}"
+            ;;
+          us)
+            us_profile="${US_PROFILE:-us.${model_id}}"
+            ;;
+          none) ;;
+          *) die "invalid profiles mode '${profiles}' for ${display}" ;;
+        esac
+        upload_marketplace_manifest \
+          "${display}" \
+          "${provider}" \
+          "${model_name}" \
+          "${model_id}" \
+          "${aliases}" \
+          "${us_profile}" \
+          "${global_profile}"
+        return 0
+      fi
+    done
+  done
+  return 1
 }
 
 upload_qwen() {
@@ -292,37 +236,12 @@ case "${MODEL}" in
   -h|--help|help)
     usage
     ;;
-  claude-sonnet|claude-sonnet-5)
-    upload_claude_sonnet
-    ;;
-  claude-sonnet-4|anthropic.claude-sonnet-4-20250514-v1:0)
-    upload_claude_sonnet_4
-    ;;
-  claude-opus|claude-opus-4.5|claude-opus-4-5)
-    upload_claude_opus
-    ;;
-  nova-pro|nova-pro-v1|amazon.nova-pro-v1:0)
-    upload_nova_pro
-    ;;
-  llama|llama3.3|llama-3.3-70b|meta.llama3-3-70b-instruct-v1:0)
-    upload_llama
-    ;;
-  gpt-oss|gpt-oss-120b|openai.gpt-oss-120b-1:0)
-    upload_gpt_oss
-    ;;
-  gpt-5.5|gpt-5-5|openai.gpt-5.5)
-    upload_gpt_55
-    ;;
-  deepseek|deepseek-v3.2|deepseek.v3.2)
-    upload_deepseek
-    ;;
-  qwen3-next-80b-a3b|qwen.qwen3-next-80b-a3b)
-    upload_qwen3_next
-    ;;
   qwen|Qwen2.5-7B-Instruct|qwen2.5-7b-instruct)
     upload_qwen "$@"
     ;;
   *)
-    die "unknown model '${MODEL}' (try: claude-sonnet, claude-sonnet-4, claude-opus, nova-pro, llama, gpt-oss, gpt-5.5, deepseek, qwen3-next-80b-a3b, qwen)"
+    if ! lookup_marketplace "${MODEL}"; then
+      die "unknown model '${MODEL}' (see --help)"
+    fi
     ;;
 esac

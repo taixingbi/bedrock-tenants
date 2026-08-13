@@ -183,30 +183,6 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
   }'
 echo
 
-# Claude Sonnet 5 (marketplace) — needs Anthropic use-case form
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-sonnet-5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
-# Claude Opus 4.5 (marketplace) — needs Anthropic use-case form
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-opus-4.5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
 # DeepSeek V3.2 (marketplace)
 curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Content-Type: application/json" \
@@ -230,4 +206,69 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
     "temperature": 0,
     "stream": true
   }'
+echo
+
+# Ministral 3 8B (marketplace)
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "ministral-8b",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
+echo
+
+# Gemma 3 12B IT (marketplace)
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "gemma-3-12b",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
+echo
+
+# Qwen3 32B (marketplace)
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "qwen3-32b",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
+echo
+
+# Ministral 3 3B / 14B + Gemma 3 4B / 27B (marketplace)
+for MODEL in ministral-3b ministral-14b gemma-3-4b gemma-3-27b; do
+  echo "=== ${MODEL} ==="
+  curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+    -d "{
+      \"model\": \"${MODEL}\",
+      \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in one short sentence.\"}],
+      \"max_tokens\": 64,
+      \"temperature\": 0
+    }" | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
+  echo
+done
+
+------------------------------------ not available yet--------------------------------------------------------
+
+# Claude Sonnet 5 (marketplace) — needs Anthropic use-case form
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "claude-sonnet-5",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
 echo

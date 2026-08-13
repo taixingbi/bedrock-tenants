@@ -6,15 +6,16 @@ from collections.abc import Iterator
 from typing import Any
 
 import boto3
+import urllib3
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-import urllib3
 
 bedrock = boto3.client("bedrock-runtime")
 _session = boto3.Session()
+_http = urllib3.PoolManager()
 
 DEFAULT_MODEL_ID = os.environ.get("MODEL_ID", "amazon.nova-lite-v1:0")
 # Back-compat alias used in a few call sites / docs.
@@ -24,66 +25,175 @@ MANTLE_SIGNING_NAME = os.environ.get("BEDROCK_MANTLE_SIGNING_NAME", "bedrock-man
 MANTLE_REGION = os.environ.get("BEDROCK_MANTLE_REGION", "").strip()
 MANTLE_REASONING_EFFORT = os.environ.get("BEDROCK_MANTLE_REASONING_EFFORT", "none")
 
+_RAW_MODEL_PREFIXES = (
+    "arn:aws:bedrock:",
+    "anthropic.",
+    "amazon.",
+    "meta.",
+    "openai.",
+    "deepseek.",
+    "qwen.",
+    "mistral.",
+    "google.",
+    "us.",
+    "eu.",
+    "au.",
+    "global.",
+)
+
+_STREAM_ERROR_KEYS = (
+    "internalServerException",
+    "modelStreamErrorException",
+    "validationException",
+    "throttlingException",
+    "modelTimeoutException",
+    "serviceUnavailableException",
+)
+
+
+def _alias_entries(*names: str, to: str) -> dict[str, str]:
+    return {name: to for name in names}
+
+
 # Friendly request names → Bedrock model ID / imported-model ARN.
 _BUILTIN_MODEL_ALIASES: dict[str, str] = {
-    "claude-sonnet": "anthropic.claude-sonnet-5",
-    "claude-sonnet-5": "anthropic.claude-sonnet-5",
-    "anthropic.claude-sonnet-5": "anthropic.claude-sonnet-5",
-    "us.anthropic.claude-sonnet-5": "us.anthropic.claude-sonnet-5",
-    "global.anthropic.claude-sonnet-5": "global.anthropic.claude-sonnet-5",
+    **_alias_entries(
+        "claude-sonnet",
+        "claude-sonnet-5",
+        "anthropic.claude-sonnet-5",
+        to="anthropic.claude-sonnet-5",
+    ),
+    **_alias_entries(
+        "us.anthropic.claude-sonnet-5",
+        to="us.anthropic.claude-sonnet-5",
+    ),
+    **_alias_entries(
+        "global.anthropic.claude-sonnet-5",
+        to="global.anthropic.claude-sonnet-5",
+    ),
     # Claude Sonnet 4 — default to US geo (on-demand typically needs inference profile).
-    "claude-sonnet-4": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "anthropic.claude-sonnet-4-20250514-v1:0": "anthropic.claude-sonnet-4-20250514-v1:0",
-    "us.anthropic.claude-sonnet-4-20250514-v1:0": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "global.anthropic.claude-sonnet-4-20250514-v1:0": "global.anthropic.claude-sonnet-4-20250514-v1:0",
-    # Claude Opus 4.5 — default to US geo (in-region runtime often N/A).
-    "claude-opus": "us.anthropic.claude-opus-4-5-20251101-v1:0",
-    "claude-opus-4.5": "us.anthropic.claude-opus-4-5-20251101-v1:0",
-    "claude-opus-4-5": "us.anthropic.claude-opus-4-5-20251101-v1:0",
-    "anthropic.claude-opus-4-5-20251101-v1:0": "anthropic.claude-opus-4-5-20251101-v1:0",
-    "us.anthropic.claude-opus-4-5-20251101-v1:0": "us.anthropic.claude-opus-4-5-20251101-v1:0",
-    "global.anthropic.claude-opus-4-5-20251101-v1:0": "global.anthropic.claude-opus-4-5-20251101-v1:0",
-    "amazon.nova-lite-v1:0": "amazon.nova-lite-v1:0",
-    "nova-lite": "amazon.nova-lite-v1:0",
-    "amazon.nova-pro-v1:0": "amazon.nova-pro-v1:0",
-    "nova-pro": "amazon.nova-pro-v1:0",
-    "us.amazon.nova-pro-v1:0": "us.amazon.nova-pro-v1:0",
+    **_alias_entries(
+        "claude-sonnet-4",
+        to="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    ),
+    **_alias_entries(
+        "anthropic.claude-sonnet-4-20250514-v1:0",
+        to="anthropic.claude-sonnet-4-20250514-v1:0",
+    ),
+    **_alias_entries(
+        "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        to="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    ),
+    **_alias_entries(
+        "global.anthropic.claude-sonnet-4-20250514-v1:0",
+        to="global.anthropic.claude-sonnet-4-20250514-v1:0",
+    ),
+    **_alias_entries("nova-lite", "amazon.nova-lite-v1:0", to="amazon.nova-lite-v1:0"),
+    **_alias_entries("nova-pro", "amazon.nova-pro-v1:0", to="amazon.nova-pro-v1:0"),
+    **_alias_entries("us.amazon.nova-pro-v1:0", to="us.amazon.nova-pro-v1:0"),
     # Meta Llama — default to US geo inference profiles (on-demand).
-    "llama": "us.meta.llama3-3-70b-instruct-v1:0",
-    "llama3.3": "us.meta.llama3-3-70b-instruct-v1:0",
-    "llama-3.3-70b": "us.meta.llama3-3-70b-instruct-v1:0",
-    "meta.llama3-3-70b-instruct-v1:0": "meta.llama3-3-70b-instruct-v1:0",
-    "us.meta.llama3-3-70b-instruct-v1:0": "us.meta.llama3-3-70b-instruct-v1:0",
-    "llama4": "us.meta.llama4-maverick-17b-instruct-v1:0",
-    "llama4-maverick": "us.meta.llama4-maverick-17b-instruct-v1:0",
-    "llama-4-maverick": "us.meta.llama4-maverick-17b-instruct-v1:0",
-    "meta.llama4-maverick-17b-instruct-v1:0": "meta.llama4-maverick-17b-instruct-v1:0",
-    "us.meta.llama4-maverick-17b-instruct-v1:0": "us.meta.llama4-maverick-17b-instruct-v1:0",
-    "llama4-scout": "us.meta.llama4-scout-17b-instruct-v1:0",
-    "llama-4-scout": "us.meta.llama4-scout-17b-instruct-v1:0",
-    "meta.llama4-scout-17b-instruct-v1:0": "meta.llama4-scout-17b-instruct-v1:0",
-    "us.meta.llama4-scout-17b-instruct-v1:0": "us.meta.llama4-scout-17b-instruct-v1:0",
+    **_alias_entries(
+        "llama",
+        "llama3.3",
+        "llama-3.3-70b",
+        "us.meta.llama3-3-70b-instruct-v1:0",
+        to="us.meta.llama3-3-70b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "meta.llama3-3-70b-instruct-v1:0",
+        to="meta.llama3-3-70b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "llama4",
+        "llama4-maverick",
+        "llama-4-maverick",
+        "us.meta.llama4-maverick-17b-instruct-v1:0",
+        to="us.meta.llama4-maverick-17b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "meta.llama4-maverick-17b-instruct-v1:0",
+        to="meta.llama4-maverick-17b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "llama4-scout",
+        "llama-4-scout",
+        "us.meta.llama4-scout-17b-instruct-v1:0",
+        to="us.meta.llama4-scout-17b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "meta.llama4-scout-17b-instruct-v1:0",
+        to="meta.llama4-scout-17b-instruct-v1:0",
+    ),
     # OpenAI GPT-OSS (Bedrock-hosted open weights).
-    "gpt-oss": "openai.gpt-oss-120b-1:0",
-    "gpt-oss-120b": "openai.gpt-oss-120b-1:0",
-    "openai.gpt-oss-120b-1:0": "openai.gpt-oss-120b-1:0",
-    "gpt-oss-20b": "openai.gpt-oss-20b-1:0",
-    "openai.gpt-oss-20b-1:0": "openai.gpt-oss-20b-1:0",
+    **_alias_entries(
+        "gpt-oss",
+        "gpt-oss-120b",
+        "openai.gpt-oss-120b-1:0",
+        to="openai.gpt-oss-120b-1:0",
+    ),
+    **_alias_entries("gpt-oss-20b", "openai.gpt-oss-20b-1:0", to="openai.gpt-oss-20b-1:0"),
     # OpenAI GPT-5.5 (bedrock-mantle Responses API only).
-    "gpt-5.5": "openai.gpt-5.5",
-    "gpt-5-5": "openai.gpt-5.5",
-    "openai.gpt-5.5": "openai.gpt-5.5",
-    # DeepSeek V3.2 (marketplace).
-    "deepseek": "deepseek.v3.2",
-    "deepseek-v3.2": "deepseek.v3.2",
-    "deepseek.v3.2": "deepseek.v3.2",
-    "deepseek-r1": "us.deepseek.r1-v1:0",
-    "deepseek.r1-v1:0": "deepseek.r1-v1:0",
-    "us.deepseek.r1-v1:0": "us.deepseek.r1-v1:0",
+    **_alias_entries("gpt-5.5", "gpt-5-5", "openai.gpt-5.5", to="openai.gpt-5.5"),
+    # DeepSeek (marketplace).
+    **_alias_entries("deepseek", "deepseek-v3.2", "deepseek.v3.2", to="deepseek.v3.2"),
+    **_alias_entries(
+        "deepseek-r1",
+        "us.deepseek.r1-v1:0",
+        to="us.deepseek.r1-v1:0",
+    ),
+    **_alias_entries("deepseek.r1-v1:0", to="deepseek.r1-v1:0"),
     # Qwen3 Next 80B A3B (marketplace).
-    "qwen3-next-80b-a3b": "qwen.qwen3-next-80b-a3b",
-    "qwen.qwen3-next-80b-a3b": "qwen.qwen3-next-80b-a3b",
-    "Qwen/Qwen3-Next-80B-A3B-Instruct": "qwen.qwen3-next-80b-a3b",
+    **_alias_entries(
+        "qwen3-next-80b-a3b",
+        "qwen.qwen3-next-80b-a3b",
+        "Qwen/Qwen3-Next-80B-A3B-Instruct",
+        to="qwen.qwen3-next-80b-a3b",
+    ),
+    # Ministral 3 (marketplace).
+    **_alias_entries(
+        "ministral-3b",
+        "ministral-3-3b",
+        "mistral.ministral-3-3b-instruct",
+        to="mistral.ministral-3-3b-instruct",
+    ),
+    **_alias_entries(
+        "ministral-8b",
+        "ministral-3-8b",
+        "mistral.ministral-3-8b-instruct",
+        to="mistral.ministral-3-8b-instruct",
+    ),
+    **_alias_entries(
+        "ministral-14b",
+        "ministral-3-14b",
+        "mistral.ministral-3-14b-instruct",
+        to="mistral.ministral-3-14b-instruct",
+    ),
+    # Gemma 3 IT (marketplace).
+    **_alias_entries(
+        "gemma-3-4b",
+        "gemma-3-4b-it",
+        "google.gemma-3-4b-it",
+        to="google.gemma-3-4b-it",
+    ),
+    **_alias_entries(
+        "gemma-3-12b",
+        "gemma-3-12b-it",
+        "google.gemma-3-12b-it",
+        to="google.gemma-3-12b-it",
+    ),
+    **_alias_entries(
+        "gemma-3-27b",
+        "gemma-3-27b-it",
+        "google.gemma-3-27b-it",
+        to="google.gemma-3-27b-it",
+    ),
+    # Qwen3 32B dense (marketplace).
+    **_alias_entries(
+        "qwen3-32b",
+        "qwen.qwen3-32b-v1:0",
+        "Qwen/Qwen3-32B",
+        to="qwen.qwen3-32b-v1:0",
+    ),
 }
 
 
@@ -140,20 +250,7 @@ def _resolve_model(request_model: Any) -> tuple[str, str]:
     if name in MODEL_MAP:
         return name, MODEL_MAP[name]
 
-    # Allow raw Bedrock IDs / ARNs / inference profiles not listed in the map.
-    if (
-        name.startswith("arn:aws:bedrock:")
-        or name.startswith("anthropic.")
-        or name.startswith("amazon.")
-        or name.startswith("meta.")
-        or name.startswith("openai.")
-        or name.startswith("deepseek.")
-        or name.startswith("qwen.")
-        or name.startswith("us.")
-        or name.startswith("eu.")
-        or name.startswith("au.")
-        or name.startswith("global.")
-    ):
+    if name.startswith(_RAW_MODEL_PREFIXES):
         return name, name
 
     known = ", ".join(sorted(MODEL_MAP))
@@ -364,18 +461,32 @@ def _mantle_signed_request(body: dict[str, Any]) -> tuple[str, dict[str, str], b
     return url, headers, data
 
 
+def _usage_from_keys(usage: dict[str, Any], prompt_keys: tuple[str, ...], completion_keys: tuple[str, ...]) -> dict[str, int]:
+    prompt_tokens = 0
+    for key in prompt_keys:
+        if usage.get(key) is not None:
+            prompt_tokens = usage[key]
+            break
+    completion_tokens = 0
+    for key in completion_keys:
+        if usage.get(key) is not None:
+            completion_tokens = usage[key]
+            break
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+    }
+
+
 def _infer_mantle_responses(
     messages: list[dict[str, str]],
     max_tokens: int,
     bedrock_model_id: str,
 ) -> dict[str, Any]:
     """Call OpenAI GPT-5.x via bedrock-mantle /openai/v1/responses (SigV4)."""
-    body = _mantle_responses_body(
-        messages, max_tokens, bedrock_model_id, stream=False
-    )
+    body = _mantle_responses_body(messages, max_tokens, bedrock_model_id, stream=False)
     url, headers, data = _mantle_signed_request(body)
-    http = urllib3.PoolManager()
-    response = http.request(
+    response = _http.request(
         "POST",
         url,
         body=data,
@@ -387,14 +498,40 @@ def _infer_mantle_responses(
         detail = response_body.get("error") or response_body
         raise RuntimeError(f"bedrock-mantle HTTP {response.status}: {detail}")
 
-    usage = response_body.get("usage") or {}
     return {
         "text": _extract_responses_text(response_body),
-        "usage": {
-            "prompt_tokens": usage.get("input_tokens", 0),
-            "completion_tokens": usage.get("output_tokens", 0),
-        },
+        "usage": _usage_from_keys(
+            response_body.get("usage") or {},
+            ("input_tokens",),
+            ("output_tokens",),
+        ),
     }
+
+
+def _converse_args(
+    messages: list[dict[str, str]],
+    max_tokens: int,
+    temperature: float | None,
+    top_p: float | None,
+    bedrock_model_id: str,
+) -> dict[str, Any]:
+    system, rest = _split_system(messages)
+    inference_config: dict[str, Any] = {"maxTokens": max_tokens}
+    if temperature is not None:
+        inference_config["temperature"] = temperature
+    if top_p is not None:
+        inference_config["topP"] = top_p
+
+    args: dict[str, Any] = {
+        "modelId": bedrock_model_id,
+        "messages": [
+            {"role": m["role"], "content": [{"text": m["content"]}]} for m in rest
+        ],
+        "inferenceConfig": inference_config,
+    }
+    if system:
+        args["system"] = [{"text": system}]
+    return args
 
 
 def _infer_converse(
@@ -404,32 +541,16 @@ def _infer_converse(
     top_p: float | None,
     bedrock_model_id: str,
 ) -> dict[str, Any]:
-    system, rest = _split_system(messages)
-    converse_messages = [
-        {"role": m["role"], "content": [{"text": m["content"]}]} for m in rest
-    ]
-    inference_config: dict[str, Any] = {"maxTokens": max_tokens}
-    if temperature is not None:
-        inference_config["temperature"] = temperature
-    if top_p is not None:
-        inference_config["topP"] = top_p
-
-    converse_args: dict[str, Any] = {
-        "modelId": bedrock_model_id,
-        "messages": converse_messages,
-        "inferenceConfig": inference_config,
-    }
-    if system:
-        converse_args["system"] = [{"text": system}]
-
-    result = bedrock.converse(**converse_args)
-    usage = result.get("usage") or {}
+    result = bedrock.converse(
+        **_converse_args(messages, max_tokens, temperature, top_p, bedrock_model_id)
+    )
     return {
         "text": _extract_converse_text(result),
-        "usage": {
-            "prompt_tokens": usage.get("inputTokens", 0),
-            "completion_tokens": usage.get("outputTokens", 0),
-        },
+        "usage": _usage_from_keys(
+            result.get("usage") or {},
+            ("inputTokens",),
+            ("outputTokens",),
+        ),
     }
 
 
@@ -449,25 +570,13 @@ def _infer_invoke_model(
         ),
     )
     response_body = json.loads(raw["body"].read())
-    usage = response_body.get("usage") or {}
-    prompt_tokens = (
-        usage.get("prompt_tokens")
-        or usage.get("inputTokens")
-        or usage.get("input_tokens")
-        or 0
-    )
-    completion_tokens = (
-        usage.get("completion_tokens")
-        or usage.get("outputTokens")
-        or usage.get("output_tokens")
-        or 0
-    )
     return {
         "text": _extract_invoke_text(response_body),
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-        },
+        "usage": _usage_from_keys(
+            response_body.get("usage") or {},
+            ("prompt_tokens", "inputTokens", "input_tokens"),
+            ("completion_tokens", "outputTokens", "output_tokens"),
+        ),
     }
 
 
@@ -532,25 +641,50 @@ def _openai_chunk(
     }
 
 
+def _new_stream_ids() -> tuple[str, int]:
+    return f"chatcmpl-{uuid.uuid4().hex[:24]}", int(time.time())
+
+
+def _sse_chunk(
+    completion_id: str,
+    created: int,
+    model: str,
+    delta: dict[str, Any],
+    finish_reason: str | None = None,
+) -> str:
+    return _sse(
+        json.dumps(
+            _openai_chunk(
+                completion_id=completion_id,
+                created=created,
+                model=model,
+                delta=delta,
+                finish_reason=finish_reason,
+            )
+        )
+    )
+
+
 def _extract_stream_delta_text(chunk: dict[str, Any]) -> tuple[str, str | None]:
     """Return (text, finish_reason) from an imported-model stream chunk."""
     choices = chunk.get("choices")
     if isinstance(choices, list) and choices:
         choice = choices[0] or {}
         finish_reason = choice.get("finish_reason")
+        finish = finish_reason if isinstance(finish_reason, str) else None
         delta = choice.get("delta") or {}
         if isinstance(delta, dict):
             content = delta.get("content")
             if isinstance(content, str) and content:
-                return content, finish_reason if isinstance(finish_reason, str) else None
+                return content, finish
         message = choice.get("message") or {}
         if isinstance(message, dict):
             content = message.get("content")
             if isinstance(content, str) and content:
-                return content, finish_reason if isinstance(finish_reason, str) else None
+                return content, finish
         text = choice.get("text")
         if isinstance(text, str) and text:
-            return text, finish_reason if isinstance(finish_reason, str) else None
+            return text, finish
 
     for key in ("generation", "completion", "outputText", "text"):
         value = chunk.get(key)
@@ -564,6 +698,13 @@ def _extract_stream_delta_text(chunk: dict[str, Any]) -> tuple[str, str | None]:
             return text, None
 
     return "", None
+
+
+def _raise_stream_event_error(event: dict[str, Any]) -> None:
+    for key in _STREAM_ERROR_KEYS:
+        if key in event:
+            message = (event[key] or {}).get("message") or key
+            raise RuntimeError(message)
 
 
 def _stream_invoke_model(
@@ -584,36 +725,14 @@ def _stream_invoke_model(
         ),
     )
     event_stream = response.get("body")
-
-    completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
-    created = int(time.time())
-    yield _sse(
-        json.dumps(
-            _openai_chunk(
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={"role": "assistant", "content": ""},
-            )
-        )
-    )
+    completion_id, created = _new_stream_ids()
+    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
 
     finish_reason: str | None = None
     for event in event_stream:
         chunk_event = event.get("chunk")
         if not chunk_event:
-            error_keys = [
-                "internalServerException",
-                "modelStreamErrorException",
-                "validationException",
-                "throttlingException",
-                "modelTimeoutException",
-                "serviceUnavailableException",
-            ]
-            for key in error_keys:
-                if key in event:
-                    message = (event[key] or {}).get("message") or key
-                    raise RuntimeError(message)
+            _raise_stream_event_error(event)
             continue
 
         payload = json.loads(chunk_event["bytes"])
@@ -621,27 +740,10 @@ def _stream_invoke_model(
         if chunk_finish:
             finish_reason = chunk_finish
         if text:
-            yield _sse(
-                json.dumps(
-                    _openai_chunk(
-                        completion_id=completion_id,
-                        created=created,
-                        model=model,
-                        delta={"content": text},
-                    )
-                )
-            )
+            yield _sse_chunk(completion_id, created, model, {"content": text})
 
-    yield _sse(
-        json.dumps(
-            _openai_chunk(
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={},
-                finish_reason=finish_reason or "stop",
-            )
-        )
+    yield _sse_chunk(
+        completion_id, created, model, {}, finish_reason=finish_reason or "stop"
     )
     yield _sse("[DONE]")
 
@@ -654,39 +756,12 @@ def _stream_converse(
     model: str,
     bedrock_model_id: str,
 ) -> Iterator[str]:
-    system, rest = _split_system(messages)
-    converse_messages = [
-        {"role": m["role"], "content": [{"text": m["content"]}]} for m in rest
-    ]
-    inference_config: dict[str, Any] = {"maxTokens": max_tokens}
-    if temperature is not None:
-        inference_config["temperature"] = temperature
-    if top_p is not None:
-        inference_config["topP"] = top_p
-
-    converse_args: dict[str, Any] = {
-        "modelId": bedrock_model_id,
-        "messages": converse_messages,
-        "inferenceConfig": inference_config,
-    }
-    if system:
-        converse_args["system"] = [{"text": system}]
-
-    response = bedrock.converse_stream(**converse_args)
-    event_stream = response.get("stream", [])
-
-    completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
-    created = int(time.time())
-    yield _sse(
-        json.dumps(
-            _openai_chunk(
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={"role": "assistant", "content": ""},
-            )
-        )
+    response = bedrock.converse_stream(
+        **_converse_args(messages, max_tokens, temperature, top_p, bedrock_model_id)
     )
+    event_stream = response.get("stream", [])
+    completion_id, created = _new_stream_ids()
+    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
 
     finish_reason = "stop"
     for event in event_stream:
@@ -694,31 +769,12 @@ def _stream_converse(
             delta = event["contentBlockDelta"].get("delta") or {}
             text = delta.get("text")
             if isinstance(text, str) and text:
-                yield _sse(
-                    json.dumps(
-                        _openai_chunk(
-                            completion_id=completion_id,
-                            created=created,
-                            model=model,
-                            delta={"content": text},
-                        )
-                    )
-                )
+                yield _sse_chunk(completion_id, created, model, {"content": text})
         elif "messageStop" in event:
             stop_reason = event["messageStop"].get("stopReason")
             finish_reason = "length" if stop_reason == "max_tokens" else "stop"
 
-    yield _sse(
-        json.dumps(
-            _openai_chunk(
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={},
-                finish_reason=finish_reason,
-            )
-        )
-    )
+    yield _sse_chunk(completion_id, created, model, {}, finish_reason=finish_reason)
     yield _sse("[DONE]")
 
 
@@ -768,13 +824,10 @@ def _stream_mantle_as_chunks(
     bedrock_model_id: str,
 ) -> Iterator[str]:
     """Stream Mantle Responses SSE and re-emit OpenAI chat.completion.chunk SSE."""
-    body = _mantle_responses_body(
-        messages, max_tokens, bedrock_model_id, stream=True
-    )
+    body = _mantle_responses_body(messages, max_tokens, bedrock_model_id, stream=True)
     url, headers, data = _mantle_signed_request(body)
-    http = urllib3.PoolManager()
     # Open before first yield so setup failures become HTTP 502.
-    response = http.request(
+    response = _http.request(
         "POST",
         url,
         body=data,
@@ -791,18 +844,8 @@ def _stream_mantle_as_chunks(
         response.release_conn()
         raise RuntimeError(f"bedrock-mantle HTTP {response.status}: {detail}")
 
-    completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
-    created = int(time.time())
-    yield _sse(
-        json.dumps(
-            _openai_chunk(
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={"role": "assistant", "content": ""},
-            )
-        )
-    )
+    completion_id, created = _new_stream_ids()
+    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
 
     finish_reason = "stop"
     try:
@@ -811,16 +854,7 @@ def _stream_mantle_as_chunks(
             if event_type == "response.output_text.delta":
                 text = event.get("delta")
                 if isinstance(text, str) and text:
-                    yield _sse(
-                        json.dumps(
-                            _openai_chunk(
-                                completion_id=completion_id,
-                                created=created,
-                                model=model,
-                                delta={"content": text},
-                            )
-                        )
-                    )
+                    yield _sse_chunk(completion_id, created, model, {"content": text})
             elif event_type == "error":
                 message = event.get("message") or event.get("error") or "mantle stream error"
                 if isinstance(message, dict):
@@ -837,17 +871,7 @@ def _stream_mantle_as_chunks(
     finally:
         response.release_conn()
 
-    yield _sse(
-        json.dumps(
-            _openai_chunk(
-                completion_id=completion_id,
-                created=created,
-                model=model,
-                delta={},
-                finish_reason=finish_reason,
-            )
-        )
-    )
+    yield _sse_chunk(completion_id, created, model, {}, finish_reason=finish_reason)
     yield _sse("[DONE]")
 
 
@@ -860,9 +884,7 @@ def _stream_inference(
     bedrock_model_id: str,
 ) -> Iterator[str]:
     if _is_mantle_responses_model(bedrock_model_id):
-        return _stream_mantle_as_chunks(
-            messages, max_tokens, model, bedrock_model_id
-        )
+        return _stream_mantle_as_chunks(messages, max_tokens, model, bedrock_model_id)
     if _is_imported_model(bedrock_model_id):
         return _stream_invoke_model(
             messages, max_tokens, temperature, top_p, model, bedrock_model_id
@@ -883,6 +905,32 @@ def _bedrock_error(exc: Exception) -> JSONResponse:
     )
 
 
+async def _parse_infer_payload(
+    request: Request,
+    x_api_key: str | None,
+    authorization: str | None,
+) -> (
+    tuple[list[dict[str, str]], int, float | None, float | None, str, str, dict[str, Any]]
+    | JSONResponse
+):
+    if not _authorized(x_api_key, authorization):
+        return _unauthorized()
+
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
+
+    try:
+        messages = _normalize_messages(payload)
+        max_tokens, temperature, top_p = _parse_sampling(payload)
+        response_model, bedrock_model_id = _resolve_model(payload.get("model"))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    return messages, max_tokens, temperature, top_p, response_model, bedrock_model_id, payload
+
+
 @app.options("/{full_path:path}")
 async def options(full_path: str) -> Response:  # noqa: ARG001
     return Response(
@@ -901,21 +949,13 @@ async def chat_completions(
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
 ) -> Response:
-    if not _authorized(x_api_key, authorization):
-        return _unauthorized()
+    parsed = await _parse_infer_payload(request, x_api_key, authorization)
+    if isinstance(parsed, JSONResponse):
+        return parsed
 
-    try:
-        payload = await request.json()
-    except Exception:  # noqa: BLE001
-        return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
-
-    try:
-        messages = _normalize_messages(payload)
-        max_tokens, temperature, top_p = _parse_sampling(payload)
-        response_model, bedrock_model_id = _resolve_model(payload.get("model"))
-    except ValueError as exc:
-        return JSONResponse(status_code=400, content={"error": str(exc)})
-
+    messages, max_tokens, temperature, top_p, response_model, bedrock_model_id, payload = (
+        parsed
+    )
     stream = bool(payload.get("stream"))
 
     if stream:
@@ -958,25 +998,20 @@ async def chat_completions(
     )
 
 
-async def _legacy_infer(
+@app.post("/")
+@app.post("/infer")
+async def infer(
     request: Request,
-    x_api_key: str | None,
-    authorization: str | None,
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> Response:
-    if not _authorized(x_api_key, authorization):
-        return _unauthorized()
+    parsed = await _parse_infer_payload(request, x_api_key, authorization)
+    if isinstance(parsed, JSONResponse):
+        return parsed
 
-    try:
-        payload = await request.json()
-    except Exception:  # noqa: BLE001
-        return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
-
-    try:
-        messages = _normalize_messages(payload)
-        max_tokens, temperature, top_p = _parse_sampling(payload)
-        response_model, bedrock_model_id = _resolve_model(payload.get("model"))
-    except ValueError as exc:
-        return JSONResponse(status_code=400, content={"error": str(exc)})
+    messages, max_tokens, temperature, top_p, response_model, bedrock_model_id, _payload = (
+        parsed
+    )
 
     try:
         inferred = _run_inference(
@@ -990,13 +1025,3 @@ async def _legacy_infer(
             response_model, inferred["text"], inferred["usage"]
         )
     )
-
-
-@app.post("/")
-@app.post("/infer")
-async def infer(
-    request: Request,
-    x_api_key: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
-) -> Response:
-    return await _legacy_infer(request, x_api_key, authorization)
