@@ -164,10 +164,6 @@ def _is_imported_model(model_id: str) -> bool:
 def _load_model_map() -> dict[str, str]:
     mapping = dict(_BUILTIN_MODEL_ALIASES)
     mapping[DEFAULT_MODEL_ID] = DEFAULT_MODEL_ID
-    if _is_imported_model(DEFAULT_MODEL_ID):
-        mapping.setdefault("Qwen/Qwen2.5-7B-Instruct", DEFAULT_MODEL_ID)
-        mapping.setdefault("qwen2.5-7b-instruct", DEFAULT_MODEL_ID)
-        mapping.setdefault("qwen", DEFAULT_MODEL_ID)
 
     raw = os.environ.get("MODEL_MAP", "").strip()
     if raw:

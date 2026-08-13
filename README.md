@@ -49,7 +49,6 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `gemma-3-12b` / `gemma-3-12b-it` | `google.gemma-3-12b-it` | Converse |
 | `gemma-3-27b` / `gemma-3-27b-it` | `google.gemma-3-27b-it` | Converse |
 | `qwen3-32b` / `Qwen/Qwen3-32B` | `qwen.qwen3-32b-v1:0` | Converse |
-| `Qwen/Qwen2.5-7B-Instruct` / `qwen` | deployed `MODEL_ID` when it is an imported-model ARN | InvokeModel |
 
 Raw Bedrock IDs and imported-model ARNs are also accepted. Unknown names return `400`.
 
@@ -68,7 +67,7 @@ Recommended open models (us-east-1, Bedrock Runtime):
 Override or add aliases with the `MODEL_MAP` env / repo variable, e.g.:
 
 ```json
-{"my-qwen":"arn:aws:bedrock:us-east-1:646821141010:imported-model/npkn89zkoiyp"}
+{"my-model":"amazon.nova-pro-v1:0"}
 ```
 
 ### Default (marketplace)
@@ -163,7 +162,7 @@ Fully managed open-weight model on Bedrock (Converse). Enable access, then:
 | `qwen3-next-80b-a3b` | `qwen.qwen3-next-80b-a3b` |
 | `Qwen/Qwen3-Next-80B-A3B-Instruct` | `qwen.qwen3-next-80b-a3b` |
 
-No geo inference profiles (in-region only). Distinct from the custom-imported `Qwen/Qwen2.5-7B-Instruct` alias.
+No geo inference profiles (in-region only).
 
 ```bash
 ./scripts/upload-model-to-s3.sh qwen3-next-80b-a3b
@@ -202,84 +201,12 @@ No geo inference profiles (in-region only).
 ./scripts/upload-model-to-s3.sh qwen3-32b
 ```
 
-### Custom import (e.g. Qwen2.5)
-
-Qwen2.5 is not a built-in Bedrock marketplace ID. Download Hugging Face weights, upload to S3, then [Custom Model Import](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html). Set `MODEL_ID` to the **imported model ARN** (also used for the `Qwen/Qwen2.5-7B-Instruct` alias).
-
-Shared models bucket (`us-east-1`):
-
-```text
-s3://bedrock-models-646821141010/
-  qwen/Qwen2.5-7B-Instruct/   ← config.json must live here
-  amazon/nova-pro-v1/         ← marketplace manifest (no HF weights)
-  meta/llama3-3-70b-instruct/ ← marketplace manifest (no HF weights)
-  openai/gpt-oss-120b/        ← marketplace manifest (no HF weights)
-  deepseek/deepseek-v3.2/     ← marketplace manifest (no HF weights)
-  qwen/qwen3-next-80b-a3b/    ← marketplace manifest (no HF weights)
-  mistral/ministral-3-*-instruct/ ← marketplace manifests
-  google/gemma-3-*-it/        ← marketplace manifests
-  qwen/qwen3-32b/             ← marketplace manifest
-```
-
-Marketplace Nova/Meta/OpenAI/DeepSeek/Qwen3/Ministral/Gemma models are enabled in the Bedrock console — they are not stored as HF weights in this bucket.
-
-#### 1. Download and upload Qwen2.5-7B-Instruct
-
-```bash
-# needs: pip install huggingface_hub  (provides `hf`)
-./scripts/upload-model-to-s3.sh qwen
-
-# or sync an existing checkout:
-./scripts/upload-model-to-s3.sh qwen --local ./Qwen2.5-7B-Instruct
-```
-
-(~15 GB download; keep model dirs and `.venv-hf` out of git.)
-
-#### 2. IAM role for import
-
-Role: `arn:aws:iam::646821141010:role/BedrockModelImportRole`
-
-Trust policy must allow `bedrock.amazonaws.com` to assume the role. Permissions need `s3:GetObject` / `s3:ListBucket` on `bedrock-models-646821141010`.
-
-#### 3. Create import job
-
-Also raise Service Quotas → Bedrock → **Concurrent model import jobs** if needed (request > current value).
-
-```bash
-aws bedrock create-model-import-job \
-  --region us-east-1 \
-  --job-name qwen25-7b-instruct-import-3 \
-  --imported-model-name qwen25-7b-instruct \
-  --role-arn arn:aws:iam::646821141010:role/BedrockModelImportRole \
-  --model-data-source '{"s3DataSource":{"s3Uri":"s3://bedrock-models-646821141010/qwen/Qwen2.5-7B-Instruct/"}}'
-```
-
-Poll status, then list the ARN:
-
-```bash
-aws bedrock get-model-import-job \
-  --region us-east-1 \
-  --job-identifier JOB_ARN
-
-aws bedrock list-imported-models --region us-east-1
-```
-
-Set GitHub variable `MODEL_ID` to the imported model ARN and redeploy.
-
-Current imported model (`Qwen2.5-7B-Instruct`):
-
-```text
-arn:aws:bedrock:us-east-1:646821141010:imported-model/npkn89zkoiyp
-```
-
-This is set as the `MODEL_ID` repository variable (default + `Qwen/...` alias). Marketplace models work in the same deploy via built-in aliases — no need to swap `MODEL_ID`.
+Shared models bucket (`us-east-1`) holds optional marketplace manifests (no HF weights) under `amazon/`, `meta/`, `openai/`, `deepseek/`, `qwen/`, `mistral/`, `google/`.
 
 The handler picks the Bedrock API per resolved model:
 
 - Marketplace models (Nova, Llama, GPT-OSS, DeepSeek, Qwen3, Ministral, Gemma, …) → **Converse**
-- Imported models (`:imported-model/` ARN, e.g. Qwen2.5) → **InvokeModel** with an OpenAI-compatible `messages` body
-
-Qwen2.5 Custom Model Import does not support Converse; InvokeModel is required.
+- Raw imported-model ARNs (`:imported-model/…`) → **InvokeModel** (no built-in friendly aliases; `Qwen/Qwen2.5-7B-Instruct` is disabled)
 
 ## API
 
@@ -289,7 +216,7 @@ Qwen2.5 Custom Model Import does not support Converse; InvokeModel is required.
 
 ```json
 {
-  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "model": "ministral-8b",
   "messages": [
     {"role": "system", "content": "optional system prompt"},
     {"role": "user", "content": "Hello"}
@@ -312,7 +239,7 @@ Success (OpenAI chat.completion shape):
   "id": "chatcmpl-...",
   "object": "chat.completion",
   "created": 0,
-  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "model": "ministral-8b",
   "choices": [
     {
       "index": 0,
@@ -355,13 +282,13 @@ sam build
 sam deploy \
   --region us-east-1 \
   --parameter-overrides \
-    ModelId=arn:aws:bedrock:us-east-1:646821141010:imported-model/npkn89zkoiyp \
+    ModelId=amazon.nova-lite-v1:0 \
     ApiKey='your-shared-secret'
 ```
 
 ## Call the API
 
-Qwen (imported):
+Example (`ministral-8b`):
 
 ```bash
 FUNCTION_URL=$(aws cloudformation describe-stacks \
@@ -375,14 +302,15 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
   -d '{
-    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "model": "ministral-8b",
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0,
-    "top_p": 1.0,
     "stream": true
   }'
 ```
+
+See `example.md` (`bash example.md`) for a full sync+stream smoke test of all marketplace aliases.
 
 Amazon Nova Pro (marketplace):
 
@@ -502,7 +430,7 @@ Run the FastAPI app locally (uses your AWS credentials for Bedrock):
 
 ```bash
 export API_KEY=local-dev-key
-export MODEL_ID='arn:aws:bedrock:us-east-1:646821141010:imported-model/npkn89zkoiyp'
+export MODEL_ID=amazon.nova-lite-v1:0
 pip install -r src/requirements.txt
 uvicorn app:app --app-dir src --host 127.0.0.1 --port 8080
 ```
@@ -514,7 +442,7 @@ curl -sS -N -X POST "http://127.0.0.1:8080/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer local-dev-key" \
   -d '{
-    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "model": "ministral-8b",
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0,

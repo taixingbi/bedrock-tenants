@@ -11,7 +11,6 @@ FUNCTION_URL=$(aws cloudformation describe-stacks \
 INFERENCE_API_KEY="${INFERENCE_API_KEY:-1234}"
 
 # Non-stream → JSON (pipe to jq). Stream → SSE (curl -N, do not pipe to jq).
-# Imported Qwen2.5 may return "Model is not ready" on cold start — retry after a short wait.
 
 chat() {
   local model="$1"
@@ -44,19 +43,19 @@ chat() {
   echo
 }
 
-# ---------------------------------------------------------------------------
-# Custom Model Import (InvokeModel)
-# ---------------------------------------------------------------------------
-
-echo "=== Qwen/Qwen2.5-7B-Instruct ==="
-chat "Qwen/Qwen2.5-7B-Instruct" false '{"top_p":1.0}'
-
-echo "=== Qwen/Qwen2.5-7B-Instruct (stream) ==="
-chat "Qwen/Qwen2.5-7B-Instruct" true '{"top_p":1.0}'
-
-# ---------------------------------------------------------------------------
-# Marketplace (Converse) — sync then stream per model
-# ---------------------------------------------------------------------------
+# Marketplace models (Converse, us-east-1). Alias → Bedrock ID:
+#   qwen3-next-80b-a3b  Qwen3 Next 80B A3B (MoE)     qwen.qwen3-next-80b-a3b
+#   nova-pro            Amazon Nova Pro               amazon.nova-pro-v1:0
+#   llama               Meta Llama 3.3 70B Instruct   us.meta.llama3-3-70b-instruct-v1:0  (US geo)
+#   gpt-oss             OpenAI GPT-OSS 120B           openai.gpt-oss-120b-1:0
+#   deepseek            DeepSeek V3.2                 deepseek.v3.2
+#   ministral-3b        Ministral 3 3B     ⭐⭐⭐⭐     mistral.ministral-3-3b-instruct
+#   ministral-8b        Ministral 3 8B     ⭐⭐⭐⭐⭐   mistral.ministral-3-8b-instruct
+#   ministral-14b       Ministral 3 14B    ⭐⭐⭐⭐⭐   mistral.ministral-3-14b-instruct
+#   gemma-3-4b          Gemma 3 4B IT      ⭐⭐⭐       google.gemma-3-4b-it
+#   gemma-3-12b         Gemma 3 12B IT     ⭐⭐⭐⭐     google.gemma-3-12b-it
+#   gemma-3-27b         Gemma 3 27B IT     ⭐⭐⭐       google.gemma-3-27b-it
+#   qwen3-32b           Qwen3 32B dense    ⭐⭐⭐⭐⭐   qwen.qwen3-32b-v1:0
 
 for MODEL in \
   qwen3-next-80b-a3b \

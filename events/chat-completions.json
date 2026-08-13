@@ -13,5 +13,5 @@
     }
   },
   "isBase64Encoded": false,
-  "body": "{\"model\": \"Qwen/Qwen2.5-7B-Instruct\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in one short sentence.\"}], \"max_tokens\": 64, \"temperature\": 0, \"top_p\": 1.0}"
+  "body": "{\"model\": \"ministral-8b\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in one short sentence.\"}], \"max_tokens\": 64, \"temperature\": 0}"
 }
