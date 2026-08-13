@@ -6,24 +6,16 @@ from collections.abc import Iterator
 from typing import Any
 
 import boto3
-import urllib3
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 bedrock = boto3.client("bedrock-runtime")
-_session = boto3.Session()
-_http = urllib3.PoolManager()
 
 DEFAULT_MODEL_ID = os.environ.get("MODEL_ID", "amazon.nova-lite-v1:0")
 # Back-compat alias used in a few call sites / docs.
 MODEL_ID = DEFAULT_MODEL_ID
 API_KEY = os.environ.get("API_KEY", "")
-MANTLE_SIGNING_NAME = os.environ.get("BEDROCK_MANTLE_SIGNING_NAME", "bedrock-mantle")
-MANTLE_REGION = os.environ.get("BEDROCK_MANTLE_REGION", "").strip()
-MANTLE_REASONING_EFFORT = os.environ.get("BEDROCK_MANTLE_REASONING_EFFORT", "none")
 
 _RAW_MODEL_PREFIXES = (
     "arn:aws:bedrock:",
@@ -57,37 +49,6 @@ def _alias_entries(*names: str, to: str) -> dict[str, str]:
 
 # Friendly request names → Bedrock model ID / imported-model ARN.
 _BUILTIN_MODEL_ALIASES: dict[str, str] = {
-    **_alias_entries(
-        "claude-sonnet",
-        "claude-sonnet-5",
-        "anthropic.claude-sonnet-5",
-        to="anthropic.claude-sonnet-5",
-    ),
-    **_alias_entries(
-        "us.anthropic.claude-sonnet-5",
-        to="us.anthropic.claude-sonnet-5",
-    ),
-    **_alias_entries(
-        "global.anthropic.claude-sonnet-5",
-        to="global.anthropic.claude-sonnet-5",
-    ),
-    # Claude Sonnet 4 — default to US geo (on-demand typically needs inference profile).
-    **_alias_entries(
-        "claude-sonnet-4",
-        to="us.anthropic.claude-sonnet-4-20250514-v1:0",
-    ),
-    **_alias_entries(
-        "anthropic.claude-sonnet-4-20250514-v1:0",
-        to="anthropic.claude-sonnet-4-20250514-v1:0",
-    ),
-    **_alias_entries(
-        "us.anthropic.claude-sonnet-4-20250514-v1:0",
-        to="us.anthropic.claude-sonnet-4-20250514-v1:0",
-    ),
-    **_alias_entries(
-        "global.anthropic.claude-sonnet-4-20250514-v1:0",
-        to="global.anthropic.claude-sonnet-4-20250514-v1:0",
-    ),
     **_alias_entries("nova-lite", "amazon.nova-lite-v1:0", to="amazon.nova-lite-v1:0"),
     **_alias_entries("nova-pro", "amazon.nova-pro-v1:0", to="amazon.nova-pro-v1:0"),
     **_alias_entries("us.amazon.nova-pro-v1:0", to="us.amazon.nova-pro-v1:0"),
@@ -132,8 +93,6 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
         to="openai.gpt-oss-120b-1:0",
     ),
     **_alias_entries("gpt-oss-20b", "openai.gpt-oss-20b-1:0", to="openai.gpt-oss-20b-1:0"),
-    # OpenAI GPT-5.5 (bedrock-mantle Responses API only).
-    **_alias_entries("gpt-5.5", "gpt-5-5", "openai.gpt-5.5", to="openai.gpt-5.5"),
     # DeepSeek (marketplace).
     **_alias_entries("deepseek", "deepseek-v3.2", "deepseek.v3.2", to="deepseek.v3.2"),
     **_alias_entries(
@@ -200,15 +159,6 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
 def _is_imported_model(model_id: str) -> bool:
     return ":imported-model/" in model_id
 
-
-def _is_mantle_responses_model(model_id: str) -> bool:
-    """OpenAI GPT-5.x on Bedrock is Responses-API-only via bedrock-mantle."""
-    base = model_id
-    for prefix in ("us.", "eu.", "global."):
-        if base.startswith(prefix):
-            base = base[len(prefix) :]
-            break
-    return base.startswith("openai.gpt-5")
 
 
 def _load_model_map() -> dict[str, str]:
@@ -389,79 +339,11 @@ def _invoke_body(
     return body
 
 
-def _mantle_region() -> str:
-    if MANTLE_REGION:
-        return MANTLE_REGION
-    return (
-        os.environ.get("AWS_REGION")
-        or os.environ.get("AWS_DEFAULT_REGION")
-        or _session.region_name
-        or "us-east-1"
-    )
-
-
-def _extract_responses_text(body: dict[str, Any]) -> str:
-    output = body.get("output")
-    if isinstance(output, list):
-        parts: list[str] = []
-        for item in output:
-            if not isinstance(item, dict):
-                continue
-            for block in item.get("content") or []:
-                if isinstance(block, dict) and block.get("type") == "output_text":
-                    text = block.get("text")
-                    if isinstance(text, str):
-                        parts.append(text)
-        if parts:
-            return "".join(parts)
-    fallback = body.get("output_text")
-    return fallback if isinstance(fallback, str) else ""
-
-
-def _mantle_responses_body(
-    messages: list[dict[str, str]],
-    max_tokens: int,
-    bedrock_model_id: str,
-    *,
-    stream: bool,
-) -> dict[str, Any]:
-    system, rest = _split_system(messages)
-    body: dict[str, Any] = {
-        "model": bedrock_model_id,
-        "input": [{"role": m["role"], "content": m["content"]} for m in rest],
-        "max_output_tokens": max_tokens,
-        "reasoning": {"effort": MANTLE_REASONING_EFFORT},
-        "store": False,
-        "stream": stream,
-    }
-    if system:
-        body["instructions"] = system
-    return body
-
-
-def _mantle_signed_request(body: dict[str, Any]) -> tuple[str, dict[str, str], bytes]:
-    """Return (url, headers, body_bytes) for a SigV4-signed mantle POST."""
-    region = _mantle_region()
-    credentials = _session.get_credentials()
-    if credentials is None:
-        raise RuntimeError("No AWS credentials available to sign bedrock-mantle request")
-    frozen = credentials.get_frozen_credentials()
-
-    url = f"https://bedrock-mantle.{region}.api.aws/openai/v1/responses"
-    data = json.dumps(body).encode("utf-8")
-    aws_request = AWSRequest(
-        method="POST",
-        url=url,
-        data=data,
-        headers={"Content-Type": "application/json"},
-    )
-    SigV4Auth(frozen, MANTLE_SIGNING_NAME, region).add_auth(aws_request)
-    prepared = aws_request.prepare()
-    headers = {k: v for k, v in prepared.headers.items() if v is not None}
-    return url, headers, data
-
-
-def _usage_from_keys(usage: dict[str, Any], prompt_keys: tuple[str, ...], completion_keys: tuple[str, ...]) -> dict[str, int]:
+def _usage_from_keys(
+    usage: dict[str, Any],
+    prompt_keys: tuple[str, ...],
+    completion_keys: tuple[str, ...],
+) -> dict[str, int]:
     prompt_tokens = 0
     for key in prompt_keys:
         if usage.get(key) is not None:
@@ -475,36 +357,6 @@ def _usage_from_keys(usage: dict[str, Any], prompt_keys: tuple[str, ...], comple
     return {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
-    }
-
-
-def _infer_mantle_responses(
-    messages: list[dict[str, str]],
-    max_tokens: int,
-    bedrock_model_id: str,
-) -> dict[str, Any]:
-    """Call OpenAI GPT-5.x via bedrock-mantle /openai/v1/responses (SigV4)."""
-    body = _mantle_responses_body(messages, max_tokens, bedrock_model_id, stream=False)
-    url, headers, data = _mantle_signed_request(body)
-    response = _http.request(
-        "POST",
-        url,
-        body=data,
-        headers=headers,
-        timeout=urllib3.Timeout(connect=10, read=290),
-    )
-    response_body = json.loads(response.data.decode("utf-8"))
-    if response.status >= 400:
-        detail = response_body.get("error") or response_body
-        raise RuntimeError(f"bedrock-mantle HTTP {response.status}: {detail}")
-
-    return {
-        "text": _extract_responses_text(response_body),
-        "usage": _usage_from_keys(
-            response_body.get("usage") or {},
-            ("input_tokens",),
-            ("output_tokens",),
-        ),
     }
 
 
@@ -785,8 +637,6 @@ def _run_inference(
     top_p: float | None,
     bedrock_model_id: str,
 ) -> dict[str, Any]:
-    if _is_mantle_responses_model(bedrock_model_id):
-        return _infer_mantle_responses(messages, max_tokens, bedrock_model_id)
     if _is_imported_model(bedrock_model_id):
         return _infer_invoke_model(
             messages, max_tokens, temperature, top_p, bedrock_model_id
@@ -795,84 +645,6 @@ def _run_inference(
         messages, max_tokens, temperature, top_p, bedrock_model_id
     )
 
-
-def _iter_sse_json(byte_chunks: Iterator[bytes]) -> Iterator[dict[str, Any]]:
-    """Parse SSE `data: {json}` events from a byte stream."""
-    buffer = ""
-    for chunk in byte_chunks:
-        buffer += chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            line = line.rstrip("\r")
-            if not line.startswith("data:"):
-                continue
-            data = line[5:].lstrip()
-            if not data or data == "[DONE]":
-                return
-            try:
-                event = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                yield event
-
-
-def _stream_mantle_as_chunks(
-    messages: list[dict[str, str]],
-    max_tokens: int,
-    model: str,
-    bedrock_model_id: str,
-) -> Iterator[str]:
-    """Stream Mantle Responses SSE and re-emit OpenAI chat.completion.chunk SSE."""
-    body = _mantle_responses_body(messages, max_tokens, bedrock_model_id, stream=True)
-    url, headers, data = _mantle_signed_request(body)
-    # Open before first yield so setup failures become HTTP 502.
-    response = _http.request(
-        "POST",
-        url,
-        body=data,
-        headers=headers,
-        preload_content=False,
-        timeout=urllib3.Timeout(connect=10, read=290),
-    )
-    if response.status >= 400:
-        try:
-            error_body = json.loads(response.data.decode("utf-8"))
-            detail = error_body.get("error") or error_body
-        except Exception:  # noqa: BLE001
-            detail = response.data.decode("utf-8", errors="replace")[:500]
-        response.release_conn()
-        raise RuntimeError(f"bedrock-mantle HTTP {response.status}: {detail}")
-
-    completion_id, created = _new_stream_ids()
-    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
-
-    finish_reason = "stop"
-    try:
-        for event in _iter_sse_json(response.stream(amt=1024, decode_content=True)):
-            event_type = event.get("type")
-            if event_type == "response.output_text.delta":
-                text = event.get("delta")
-                if isinstance(text, str) and text:
-                    yield _sse_chunk(completion_id, created, model, {"content": text})
-            elif event_type == "error":
-                message = event.get("message") or event.get("error") or "mantle stream error"
-                if isinstance(message, dict):
-                    message = message.get("message") or str(message)
-                raise RuntimeError(str(message))
-            elif event_type == "response.completed":
-                completed = event.get("response") or {}
-                status = completed.get("status")
-                incomplete = completed.get("incomplete_details") or {}
-                reason = incomplete.get("reason") if isinstance(incomplete, dict) else None
-                if status == "incomplete" or reason == "max_output_tokens":
-                    finish_reason = "length"
-            # Skip reasoning / other lifecycle events — chat content only.
-    finally:
-        response.release_conn()
-
-    yield _sse_chunk(completion_id, created, model, {}, finish_reason=finish_reason)
-    yield _sse("[DONE]")
 
 
 def _stream_inference(
@@ -883,8 +655,6 @@ def _stream_inference(
     model: str,
     bedrock_model_id: str,
 ) -> Iterator[str]:
-    if _is_mantle_responses_model(bedrock_model_id):
-        return _stream_mantle_as_chunks(messages, max_tokens, model, bedrock_model_id)
     if _is_imported_model(bedrock_model_id):
         return _stream_invoke_model(
             messages, max_tokens, temperature, top_p, model, bedrock_model_id

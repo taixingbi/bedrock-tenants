@@ -2,8 +2,15 @@
 # Upload / register a model in the shared Bedrock models bucket.
 #
 # Usage:
-#   ./scripts/upload-model-to-s3.sh claude-sonnet
-#   ./scripts/upload-model-to-s3.sh ministral-8b
+#   ./scripts/upload-model-to-s3.sh nova-pro
+#   ./scripts/upload-model-to-s3.sh llama
+#   ./scripts/upload-model-to-s3.sh gpt-oss
+#   ./scripts/upload-model-to-s3.sh deepseek
+#   ./scripts/upload-model-to-s3.sh qwen3-next-80b-a3b
+#   ./scripts/upload-model-to-s3.sh ministral-3b
+#   ./scripts/upload-model-to-s3.sh gemma-3-4b
+#   ./scripts/upload-model-to-s3.sh qwen3-32b
+#   ./scripts/upload-model-to-s3.sh qwen
 #   ./scripts/upload-model-to-s3.sh qwen --local ./Qwen2.5-7B-Instruct
 #
 # Env overrides:
@@ -19,12 +26,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Catalog: key1|key2|...|display|provider|name|id|aliases|profiles
 # profiles: none | us | us+global  (last 6 fields are fixed; earlier fields are lookup keys)
 MARKETPLACE_MODELS=(
-  'claude-sonnet|claude-sonnet-5|Claude Sonnet|anthropic|claude-sonnet-5|anthropic.claude-sonnet-5|claude-sonnet, claude-sonnet-5, anthropic.claude-sonnet-5|us+global'
-  'claude-sonnet-4|Claude Sonnet 4|anthropic|claude-sonnet-4|anthropic.claude-sonnet-4-20250514-v1:0|claude-sonnet-4, us.anthropic.claude-sonnet-4-20250514-v1:0|us+global'
   'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
   'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
   'gpt-oss|gpt-oss-120b|OpenAI GPT-OSS 120B|openai|gpt-oss-120b|openai.gpt-oss-120b-1:0|gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0|none'
-  'gpt-5.5|gpt-5-5|OpenAI GPT-5.5|openai|gpt-5.5|openai.gpt-5.5|gpt-5.5, gpt-5-5, openai.gpt-5.5|none'
   'deepseek|deepseek-v3.2|DeepSeek V3.2|deepseek|deepseek-v3.2|deepseek.v3.2|deepseek, deepseek-v3.2, deepseek.v3.2|none'
   'qwen3-next-80b-a3b|Qwen3 Next 80B A3B|qwen|qwen3-next-80b-a3b|qwen.qwen3-next-80b-a3b|qwen3-next-80b-a3b, qwen.qwen3-next-80b-a3b|none'
   'ministral-3b|ministral-3-3b|Ministral 3 3B|mistral|ministral-3-3b-instruct|mistral.ministral-3-3b-instruct|ministral-3b, ministral-3-3b, mistral.ministral-3-3b-instruct|none'
@@ -41,8 +45,7 @@ usage() {
 Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
-  claude-sonnet / claude-sonnet-4
-  nova-pro / llama / gpt-oss / gpt-5.5 / deepseek
+  nova-pro / llama / gpt-oss / deepseek
   qwen3-next-80b-a3b / qwen3-32b
   ministral-3b / ministral-8b / ministral-14b
   gemma-3-4b / gemma-3-12b / gemma-3-27b

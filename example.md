@@ -7,6 +7,8 @@ INFERENCE_API_KEY=1234
 
 # Non-stream responses are JSON → pipe to jq.
 # Stream responses are SSE (text/event-stream) → use curl -N, do NOT pipe to jq.
+#
+# Imported models (Qwen2.5) may return "Model is not ready" on a cold start — retry after a short wait.
 
 # Qwen (imported)
 curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
@@ -135,54 +137,6 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
   }'
 echo
 
-# OpenAI GPT-5.5 (marketplace, Mantle) — omit temperature / top_p
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "gpt-5.5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
-# OpenAI GPT-5.5 (stream — Mantle Responses SSE → chat chunks)
-curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "gpt-5.5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "stream": true
-  }'
-echo
-
-# Claude Sonnet 4 (marketplace) — needs Anthropic use-case form
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-sonnet-4",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
-# Claude Sonnet 4 (stream)
-curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-sonnet-4",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0,
-    "stream": true
-  }'
-echo
-
 # DeepSeek V3.2 (marketplace)
 curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Content-Type: application/json" \
@@ -208,44 +162,8 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
   }'
 echo
 
-# Ministral 3 8B (marketplace)
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "ministral-8b",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
-# Gemma 3 12B IT (marketplace)
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "gemma-3-12b",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
-# Qwen3 32B (marketplace)
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "qwen3-32b",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo
-
-# Ministral 3 3B / 14B + Gemma 3 4B / 27B (marketplace)
-for MODEL in ministral-3b ministral-14b gemma-3-4b gemma-3-27b; do
+# Ministral / Gemma / Qwen3 32B (marketplace)
+for MODEL in ministral-3b ministral-8b ministral-14b gemma-3-4b gemma-3-12b gemma-3-27b qwen3-32b; do
   echo "=== ${MODEL} ==="
   curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
     -H "Content-Type: application/json" \
@@ -258,17 +176,3 @@ for MODEL in ministral-3b ministral-14b gemma-3-4b gemma-3-27b; do
     }" | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
   echo
 done
-
------------------------------------- not available yet--------------------------------------------------------
-
-# Claude Sonnet 5 (marketplace) — needs Anthropic use-case form
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-sonnet-5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{error, detail, model, answer: .choices[0].message.content, usage}'
-echo

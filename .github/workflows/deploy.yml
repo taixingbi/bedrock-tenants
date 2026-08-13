@@ -67,7 +67,7 @@ jobs:
           API_KEY: ${{ secrets.INFERENCE_API_KEY }}
         run: |
           MODEL_ID="${MODEL_ID:-amazon.nova-lite-v1:0}"
-          # Empty ModelMap is fine; Claude Sonnet aliases are built into the app.
+          # Empty ModelMap is fine; marketplace aliases are built into the app.
           PARAMS=(
             "ModelId=${MODEL_ID}"
             "ApiKey=${API_KEY}"

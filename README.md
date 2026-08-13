@@ -31,9 +31,6 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 
 | Request `model` | Bedrock ID | API |
 | --- | --- | --- |
-| `claude-sonnet` / `claude-sonnet-5` / `anthropic.claude-sonnet-5` | `anthropic.claude-sonnet-5` | Converse |
-| `us.anthropic.claude-sonnet-5` | US geo inference profile | Converse |
-| `claude-sonnet-4` | `us.anthropic.claude-sonnet-4-20250514-v1:0` | Converse |
 | `nova-pro` / `amazon.nova-pro-v1:0` | `amazon.nova-pro-v1:0` | Converse |
 | `us.amazon.nova-pro-v1:0` | US geo inference profile | Converse |
 | `nova-lite` / `amazon.nova-lite-v1:0` | `amazon.nova-lite-v1:0` | Converse |
@@ -42,7 +39,6 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `llama4-scout` | `us.meta.llama4-scout-17b-instruct-v1:0` | Converse |
 | `gpt-oss` / `gpt-oss-120b` | `openai.gpt-oss-120b-1:0` | Converse |
 | `gpt-oss-20b` | `openai.gpt-oss-20b-1:0` | Converse |
-| `gpt-5.5` / `openai.gpt-5.5` | `openai.gpt-5.5` | Mantle Responses |
 | `deepseek` / `deepseek.v3.2` | `deepseek.v3.2` | Converse |
 | `deepseek-r1` | `us.deepseek.r1-v1:0` | Converse |
 | `qwen3-next-80b-a3b` / `qwen.qwen3-next-80b-a3b` | `qwen.qwen3-next-80b-a3b` | Converse |
@@ -99,48 +95,6 @@ Optional catalog manifest:
 | In-region (`us-east-1`) | `amazon.nova-pro-v1:0` |
 | US geo cross-region | `us.amazon.nova-pro-v1:0` |
 
-### Claude Sonnet (marketplace)
-
-Anthropic does not publish Claude weights — no `hf download` / Custom Model Import. Enable model access in the Bedrock console, then call:
-
-```json
-{"model": "claude-sonnet-5", "messages": [{"role": "user", "content": "Hello"}]}
-```
-
-Optional catalog manifest in the shared bucket:
-
-```bash
-./scripts/upload-model-to-s3.sh claude-sonnet
-# → s3://bedrock-models-646821141010/anthropic/claude-sonnet-5/model-manifest.json
-```
-
-| Mode | Bedrock ID |
-| --- | --- |
-| In-region (`us-east-1`) | `anthropic.claude-sonnet-5` |
-| US geo cross-region | `us.anthropic.claude-sonnet-5` |
-| Global | `global.anthropic.claude-sonnet-5` |
-
-Submit the Anthropic use-case form in the Bedrock console before first invoke.
-
-### Claude Sonnet 4 (marketplace)
-
-Enable model access, then call (friendly alias defaults to the **US geo** inference profile):
-
-```json
-{"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "Hello"}]}
-```
-
-```bash
-./scripts/upload-model-to-s3.sh claude-sonnet-4
-# → s3://bedrock-models-646821141010/anthropic/claude-sonnet-4/model-manifest.json
-```
-
-| Mode | Bedrock ID |
-| --- | --- |
-| In-region | `anthropic.claude-sonnet-4-20250514-v1:0` |
-| US geo cross-region (default alias) | `us.anthropic.claude-sonnet-4-20250514-v1:0` |
-| Global | `global.anthropic.claude-sonnet-4-20250514-v1:0` |
-
 ### Meta Llama (marketplace)
 
 Enable Meta model access in the Bedrock console. Friendly aliases default to the **US geo inference profile** (required for on-demand on many Llama IDs):
@@ -176,23 +130,6 @@ Bedrock-hosted OpenAI open-weight models (not ChatGPT API keys). Enable access, 
 ```bash
 ./scripts/upload-model-to-s3.sh gpt-oss
 # → s3://bedrock-models-646821141010/openai/gpt-oss-120b/model-manifest.json
-```
-
-### OpenAI GPT-5.5 (marketplace)
-
-GPT-5.5 on Bedrock is **Responses-API only** via `bedrock-mantle` (not Converse). The Lambda signs Mantle requests with SigV4. Enable access in `us-east-1` or `us-east-2`, then:
-
-```json
-{"model": "gpt-5.5", "messages": [{"role": "user", "content": "Hello"}]}
-```
-
-`"stream": true` opens Mantle Responses SSE and translates `response.output_text.delta` events into OpenAI `chat.completion.chunk` SSE (reasoning deltas are skipped).
-
-Omit `temperature` / `top_p` — GPT-5.x rejects them. Optional env: `BEDROCK_MANTLE_REGION`, `BEDROCK_MANTLE_REASONING_EFFORT` (default `none`; also `low` / `medium` / `high` / `xhigh`).
-
-```bash
-./scripts/upload-model-to-s3.sh gpt-5.5
-# → s3://bedrock-models-646821141010/openai/gpt-5.5/model-manifest.json
 ```
 
 ### DeepSeek (marketplace)
@@ -274,12 +211,9 @@ Shared models bucket (`us-east-1`):
 ```text
 s3://bedrock-models-646821141010/
   qwen/Qwen2.5-7B-Instruct/   ← config.json must live here
-  anthropic/claude-sonnet-5/  ← marketplace manifest (no HF weights)
-  anthropic/claude-sonnet-4/  ← marketplace manifest (no HF weights)
   amazon/nova-pro-v1/         ← marketplace manifest (no HF weights)
   meta/llama3-3-70b-instruct/ ← marketplace manifest (no HF weights)
   openai/gpt-oss-120b/        ← marketplace manifest (no HF weights)
-  openai/gpt-5.5/             ← marketplace manifest (mantle Responses)
   deepseek/deepseek-v3.2/     ← marketplace manifest (no HF weights)
   qwen/qwen3-next-80b-a3b/    ← marketplace manifest (no HF weights)
   mistral/ministral-3-*-instruct/ ← marketplace manifests
@@ -287,7 +221,7 @@ s3://bedrock-models-646821141010/
   qwen/qwen3-32b/             ← marketplace manifest
 ```
 
-Marketplace Claude/Nova/Meta/OpenAI/DeepSeek/Qwen3/Ministral/Gemma models are enabled in the Bedrock console — they are not stored as HF weights in this bucket.
+Marketplace Nova/Meta/OpenAI/DeepSeek/Qwen3/Ministral/Gemma models are enabled in the Bedrock console — they are not stored as HF weights in this bucket.
 
 #### 1. Download and upload Qwen2.5-7B-Instruct
 
@@ -338,11 +272,11 @@ Current imported model (`Qwen2.5-7B-Instruct`):
 arn:aws:bedrock:us-east-1:646821141010:imported-model/npkn89zkoiyp
 ```
 
-This is set as the `MODEL_ID` repository variable (default + `Qwen/...` alias). Claude Sonnet works in the same deploy via built-in aliases — no need to swap `MODEL_ID`.
+This is set as the `MODEL_ID` repository variable (default + `Qwen/...` alias). Marketplace models work in the same deploy via built-in aliases — no need to swap `MODEL_ID`.
 
 The handler picks the Bedrock API per resolved model:
 
-- Marketplace models (Claude Sonnet, Nova, …) → **Converse**
+- Marketplace models (Nova, Llama, GPT-OSS, DeepSeek, Qwen3, Ministral, Gemma, …) → **Converse**
 - Imported models (`:imported-model/` ARN, e.g. Qwen2.5) → **InvokeModel** with an OpenAI-compatible `messages` body
 
 Qwen2.5 Custom Model Import does not support Converse; InvokeModel is required.
@@ -396,7 +330,7 @@ Success (OpenAI chat.completion shape):
 
 The `model` field selects the Bedrock backend (see [Models](#models)); the same name is echoed in the response.
 
-Set `"stream": true` to receive OpenAI SSE (`text/event-stream`) chunks (`chat.completion.chunk` then `data: [DONE]`). Streaming uses Lambda Function URL `RESPONSE_STREAM` plus Bedrock `InvokeModelWithResponseStream` / `ConverseStream` / Mantle Responses SSE (translated to chat chunks for GPT-5.x).
+Set `"stream": true` to receive OpenAI SSE (`text/event-stream`) chunks (`chat.completion.chunk` then `data: [DONE]`). Streaming uses Lambda Function URL `RESPONSE_STREAM` plus Bedrock `InvokeModelWithResponseStream` / `ConverseStream`.
 
 ## Deploy
 
@@ -448,34 +382,6 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
     "top_p": 1.0,
     "stream": true
   }'
-```
-
-Claude Sonnet (marketplace):
-
-```bash
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-sonnet-5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{model, answer: .choices[0].message.content, usage}'
-```
-
-Claude Sonnet 4 (marketplace):
-
-```bash
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "claude-sonnet-4",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{model, answer: .choices[0].message.content, usage}'
 ```
 
 Amazon Nova Pro (marketplace):
@@ -588,33 +494,6 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
     "max_tokens": 64,
     "temperature": 0
   }' | jq '{model, answer: .choices[0].message.content, usage}'
-```
-
-OpenAI GPT-5.5 (marketplace, Mantle):
-
-```bash
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "gpt-5.5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64
-  }' | jq '{model, answer: .choices[0].message.content, usage}'
-```
-
-OpenAI GPT-5.5 (stream — Mantle Responses SSE → chat chunks):
-
-```bash
-curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "gpt-5.5",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "stream": true
-  }'
 ```
 
 ## Local invoke
