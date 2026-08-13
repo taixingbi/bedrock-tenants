@@ -39,6 +39,8 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `llama4-scout` | `us.meta.llama4-scout-17b-instruct-v1:0` | Converse |
 | `gpt-oss` / `gpt-oss-120b` | `openai.gpt-oss-120b-1:0` | Converse |
 | `gpt-oss-20b` | `openai.gpt-oss-20b-1:0` | Converse |
+| `gpt-oss-safeguard-20b` | `openai.gpt-oss-safeguard-20b` | Converse |
+| `gpt-oss-safeguard` / `gpt-oss-safeguard-120b` | `openai.gpt-oss-safeguard-120b` | Converse |
 | `deepseek` / `deepseek.v3.2` | `deepseek.v3.2` | Converse |
 | `deepseek-r1` | `us.deepseek.r1-v1:0` | Converse |
 | `qwen3-next-80b-a3b` / `qwen.qwen3-next-80b-a3b` | `qwen.qwen3-next-80b-a3b` | Converse |
@@ -125,10 +127,21 @@ Bedrock-hosted OpenAI open-weight models (not ChatGPT API keys). Enable access, 
 | --- | --- |
 | `gpt-oss` / `gpt-oss-120b` | `openai.gpt-oss-120b-1:0` |
 | `gpt-oss-20b` | `openai.gpt-oss-20b-1:0` |
+| `gpt-oss-safeguard-20b` | `openai.gpt-oss-safeguard-20b` |
+| `gpt-oss-safeguard` / `gpt-oss-safeguard-120b` | `openai.gpt-oss-safeguard-120b` |
+
+Safeguard variants are dedicated safety / content-moderation models (not general chat). They emit internal reasoning before the final text — use `max_tokens` ≥ 256. Enable access in the Bedrock console, then:
+
+```json
+{"model": "gpt-oss-safeguard-20b", "messages": [{"role": "user", "content": "Hello"}]}
+{"model": "gpt-oss-safeguard-120b", "messages": [{"role": "user", "content": "Hello"}]}
+```
 
 ```bash
 ./scripts/upload-model-to-s3.sh gpt-oss
 # → s3://bedrock-models-646821141010/openai/gpt-oss-120b/model-manifest.json
+./scripts/upload-model-to-s3.sh gpt-oss-safeguard-20b
+./scripts/upload-model-to-s3.sh gpt-oss-safeguard-120b
 ```
 
 ### DeepSeek (marketplace)

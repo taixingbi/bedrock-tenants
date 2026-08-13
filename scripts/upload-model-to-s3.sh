@@ -29,6 +29,8 @@ MARKETPLACE_MODELS=(
   'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
   'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
   'gpt-oss|gpt-oss-120b|OpenAI GPT-OSS 120B|openai|gpt-oss-120b|openai.gpt-oss-120b-1:0|gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0|none'
+  'gpt-oss-safeguard-20b|OpenAI GPT-OSS Safeguard 20B|openai|gpt-oss-safeguard-20b|openai.gpt-oss-safeguard-20b|gpt-oss-safeguard-20b, openai.gpt-oss-safeguard-20b|none'
+  'gpt-oss-safeguard|gpt-oss-safeguard-120b|OpenAI GPT-OSS Safeguard 120B|openai|gpt-oss-safeguard-120b|openai.gpt-oss-safeguard-120b|gpt-oss-safeguard, gpt-oss-safeguard-120b, openai.gpt-oss-safeguard-120b|none'
   'deepseek|deepseek-v3.2|DeepSeek V3.2|deepseek|deepseek-v3.2|deepseek.v3.2|deepseek, deepseek-v3.2, deepseek.v3.2|none'
   'qwen3-next-80b-a3b|Qwen3 Next 80B A3B|qwen|qwen3-next-80b-a3b|qwen.qwen3-next-80b-a3b|qwen3-next-80b-a3b, qwen.qwen3-next-80b-a3b|none'
   'ministral-3b|ministral-3-3b|Ministral 3 3B|mistral|ministral-3-3b-instruct|mistral.ministral-3-3b-instruct|ministral-3b, ministral-3-3b, mistral.ministral-3-3b-instruct|none'
@@ -45,7 +47,7 @@ usage() {
 Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
-  nova-pro / llama / gpt-oss / deepseek
+  nova-pro / llama / gpt-oss / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek
   qwen3-next-80b-a3b / qwen3-32b
   ministral-3b / ministral-8b / ministral-14b
   gemma-3-4b / gemma-3-12b / gemma-3-27b

@@ -93,6 +93,18 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
         to="openai.gpt-oss-120b-1:0",
     ),
     **_alias_entries("gpt-oss-20b", "openai.gpt-oss-20b-1:0", to="openai.gpt-oss-20b-1:0"),
+    # OpenAI GPT-OSS Safeguard (safety / content moderation).
+    **_alias_entries(
+        "gpt-oss-safeguard-20b",
+        "openai.gpt-oss-safeguard-20b",
+        to="openai.gpt-oss-safeguard-20b",
+    ),
+    **_alias_entries(
+        "gpt-oss-safeguard",
+        "gpt-oss-safeguard-120b",
+        "openai.gpt-oss-safeguard-120b",
+        to="openai.gpt-oss-safeguard-120b",
+    ),
     # DeepSeek (marketplace).
     **_alias_entries("deepseek", "deepseek-v3.2", "deepseek.v3.2", to="deepseek.v3.2"),
     **_alias_entries(
@@ -219,12 +231,22 @@ def _unauthorized() -> JSONResponse:
 
 def _extract_converse_text(converse_response: dict[str, Any]) -> str:
     parts: list[str] = []
+    reasoning_parts: list[str] = []
     message = converse_response.get("output", {}).get("message", {})
     for block in message.get("content", []):
         text = block.get("text")
         if text:
             parts.append(text)
-    return "".join(parts)
+            continue
+        # GPT-OSS / Safeguard may return only reasoningContent when max_tokens
+        # is spent before the final text block.
+        reasoning = block.get("reasoningContent") or {}
+        reasoning_text = (reasoning.get("reasoningText") or {}).get("text")
+        if isinstance(reasoning_text, str) and reasoning_text:
+            reasoning_parts.append(reasoning_text)
+    if parts:
+        return "".join(parts)
+    return "".join(reasoning_parts)
 
 
 def _extract_invoke_text(invoke_body: dict[str, Any]) -> str:
