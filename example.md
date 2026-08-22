@@ -47,6 +47,7 @@ chat() {
 #   qwen3-next-80b-a3b       Qwen3 Next 80B A3B (MoE)              qwen.qwen3-next-80b-a3b
 #   nova-pro                 Amazon Nova Pro                        amazon.nova-pro-v1:0
 #   llama                    Meta Llama 3.3 70B Instruct            us.meta.llama3-3-70b-instruct-v1:0  (US geo)
+#   llama4 / llama4-maverick Meta Llama 4 Maverick 17B Instruct     us.meta.llama4-maverick-17b-instruct-v1:0  (US geo)
 #   gpt-oss                  OpenAI GPT-OSS 120B                    openai.gpt-oss-120b-1:0
 #   gpt-oss-safeguard-20b    OpenAI GPT-OSS Safeguard 20B (safety)  openai.gpt-oss-safeguard-20b
 #   gpt-oss-safeguard-120b   OpenAI GPT-OSS Safeguard 120B (safety) openai.gpt-oss-safeguard-120b
@@ -64,6 +65,7 @@ for MODEL in \
   qwen3-next-80b-a3b \
   nova-pro \
   llama \
+  llama4 \
   gpt-oss \
   gpt-oss-safeguard-20b \
   gpt-oss-safeguard-120b \

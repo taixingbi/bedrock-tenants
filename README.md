@@ -63,6 +63,7 @@ Recommended open models (us-east-1, Bedrock Runtime):
 | Ministral 3 8B | 8B | `ministral-8b` | `mistral.ministral-3-8b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
 | Gemma 3 12B IT | 12B | `gemma-3-12b` | `google.gemma-3-12b-it` | ✅ | ✅ | ⭐⭐⭐⭐ |
 | Ministral 3 14B | 14B | `ministral-14b` | `mistral.ministral-3-14b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
+| Llama 4 Maverick | 17B active (400B MoE) | `llama4` / `llama4-maverick` | `us.meta.llama4-maverick-17b-instruct-v1:0` | ✅ | ✅ | ⭐⭐⭐⭐ |
 | Gemma 3 27B | 27B | `gemma-3-27b` | `google.gemma-3-27b-it` | ✅ | ✅ | ⭐⭐⭐ |
 | Qwen3 32B | 32B | `qwen3-32b` | `qwen.qwen3-32b-v1:0` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
 
@@ -113,6 +114,8 @@ Enable Meta model access in the Bedrock console. Friendly aliases default to the
 ```bash
 ./scripts/upload-model-to-s3.sh llama
 # → s3://bedrock-models-646821141010/meta/llama3-3-70b-instruct/model-manifest.json
+./scripts/upload-model-to-s3.sh llama4
+# → s3://bedrock-models-646821141010/meta/llama4-maverick-17b-instruct/model-manifest.json
 ```
 
 ### OpenAI GPT-OSS (marketplace)
@@ -347,6 +350,20 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
   -d '{
     "model": "llama",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 64,
+    "temperature": 0
+  }' | jq '{model, answer: .choices[0].message.content, usage}'
+```
+
+Meta Llama 4 Maverick (marketplace):
+
+```bash
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "llama4",
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0
