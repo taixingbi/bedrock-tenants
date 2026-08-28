@@ -15,6 +15,14 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Shared secret required in Authorization Bearer or x-api-key header
+  GuardrailId:
+    Type: String
+    Default: ""
+    Description: Bedrock Guardrail ID for apply-guardrail (ApplyGuardrail API)
+  GuardrailVersion:
+    Type: String
+    Default: DRAFT
+    Description: Bedrock Guardrail version for ApplyGuardrail (DRAFT or a published version)
 
 Globals:
   Function:
@@ -38,6 +46,8 @@ Resources:
           MODEL_ID: !Ref ModelId
           MODEL_MAP: !Ref ModelMap
           API_KEY: !Ref ApiKey
+          GUARDRAIL_ID: !Ref GuardrailId
+          GUARDRAIL_VERSION: !Ref GuardrailVersion
           AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
           AWS_LWA_INVOKE_MODE: response_stream
           AWS_LWA_PORT: "8080"
@@ -49,6 +59,7 @@ Resources:
                 - bedrock:InvokeModelWithResponseStream
                 - bedrock:Converse
                 - bedrock:ConverseStream
+                - bedrock:ApplyGuardrail
               Resource: "*"
       FunctionUrlConfig:
         AuthType: NONE

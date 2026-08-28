@@ -65,6 +65,8 @@ jobs:
           MODEL_ID: ${{ vars.MODEL_ID }}
           MODEL_MAP: ${{ vars.MODEL_MAP }}
           API_KEY: ${{ secrets.INFERENCE_API_KEY }}
+          GUARDRAIL_ID: ${{ vars.GUARDRAIL_ID }}
+          GUARDRAIL_VERSION: ${{ vars.GUARDRAIL_VERSION }}
         run: |
           MODEL_ID="${MODEL_ID:-amazon.nova-lite-v1:0}"
           # Empty ModelMap is fine; marketplace aliases are built into the app.
@@ -74,6 +76,12 @@ jobs:
           )
           if [ -n "${MODEL_MAP}" ]; then
             PARAMS+=("ModelMap=${MODEL_MAP}")
+          fi
+          if [ -n "${GUARDRAIL_ID}" ]; then
+            PARAMS+=("GuardrailId=${GUARDRAIL_ID}")
+          fi
+          if [ -n "${GUARDRAIL_VERSION}" ]; then
+            PARAMS+=("GuardrailVersion=${GUARDRAIL_VERSION}")
           fi
           sam deploy \
             --no-confirm-changeset \

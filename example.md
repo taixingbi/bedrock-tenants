@@ -48,6 +48,8 @@ chat() {
 #   nova-pro                 Amazon Nova Pro                        amazon.nova-pro-v1:0
 #   llama                    Meta Llama 3.3 70B Instruct            us.meta.llama3-3-70b-instruct-v1:0  (US geo)
 #   llama4 / llama4-maverick Meta Llama 4 Maverick 17B Instruct     us.meta.llama4-maverick-17b-instruct-v1:0  (US geo)
+#   llama3.2-1b              Meta Llama 3.2 1B Instruct (EOL)       us.meta.llama3-2-1b-instruct-v1:0  (US geo)
+#   apply-guardrail          Amazon Bedrock ApplyGuardrail (needs GUARDRAIL_ID)
 #   gpt-oss                  OpenAI GPT-OSS 120B                    openai.gpt-oss-120b-1:0
 #   gpt-oss-safeguard-20b    OpenAI GPT-OSS Safeguard 20B (safety)  openai.gpt-oss-safeguard-20b
 #   gpt-oss-safeguard-120b   OpenAI GPT-OSS Safeguard 120B (safety) openai.gpt-oss-safeguard-120b
@@ -66,6 +68,8 @@ for MODEL in \
   nova-pro \
   llama \
   llama4 \
+  llama3.2-1b \
+  apply-guardrail \
   gpt-oss \
   gpt-oss-safeguard-20b \
   gpt-oss-safeguard-120b \

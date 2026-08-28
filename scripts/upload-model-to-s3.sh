@@ -28,6 +28,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MARKETPLACE_MODELS=(
   'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
   'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
+  'llama3.2-1b|llama-3.2-1b|Meta Llama 3.2 1B Instruct|meta|llama3-2-1b-instruct|meta.llama3-2-1b-instruct-v1:0|llama3.2-1b, llama-3.2-1b, us.meta.llama3-2-1b-instruct-v1:0|us'
+  'guardrail|apply-guardrail|Amazon Bedrock ApplyGuardrail|amazon|apply-guardrail|apply-guardrail|guardrail, apply-guardrail|none'
   'llama4|llama4-maverick|llama-4-maverick|Meta Llama 4 Maverick 17B Instruct|meta|llama4-maverick-17b-instruct|meta.llama4-maverick-17b-instruct-v1:0|llama4, llama4-maverick, llama-4-maverick, us.meta.llama4-maverick-17b-instruct-v1:0|us'
   'gpt-oss|gpt-oss-120b|OpenAI GPT-OSS 120B|openai|gpt-oss-120b|openai.gpt-oss-120b-1:0|gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0|none'
   'gpt-oss-safeguard-20b|OpenAI GPT-OSS Safeguard 20B|openai|gpt-oss-safeguard-20b|openai.gpt-oss-safeguard-20b|gpt-oss-safeguard-20b, openai.gpt-oss-safeguard-20b|none'
@@ -48,7 +50,8 @@ usage() {
 Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
-  nova-pro / llama / llama4 / llama4-maverick / gpt-oss / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek
+  nova-pro / llama / llama3.2-1b / llama4 / llama4-maverick / apply-guardrail / guardrail
+  gpt-oss / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek
   qwen3-next-80b-a3b / qwen3-32b
   ministral-3b / ministral-8b / ministral-14b
   gemma-3-4b / gemma-3-12b / gemma-3-27b

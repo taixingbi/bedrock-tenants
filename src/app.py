@@ -16,6 +16,11 @@ DEFAULT_MODEL_ID = os.environ.get("MODEL_ID", "amazon.nova-lite-v1:0")
 # Back-compat alias used in a few call sites / docs.
 MODEL_ID = DEFAULT_MODEL_ID
 API_KEY = os.environ.get("API_KEY", "")
+GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "").strip()
+GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "DRAFT").strip() or "DRAFT"
+
+# Sentinel backend ID for Amazon Bedrock ApplyGuardrail (not a foundation model).
+APPLY_GUARDRAIL_ID = "apply-guardrail"
 
 _RAW_MODEL_PREFIXES = (
     "arn:aws:bedrock:",
@@ -63,6 +68,21 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
     **_alias_entries(
         "meta.llama3-3-70b-instruct-v1:0",
         to="meta.llama3-3-70b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "llama3.2-1b",
+        "llama-3.2-1b",
+        "us.meta.llama3-2-1b-instruct-v1:0",
+        to="us.meta.llama3-2-1b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "meta.llama3-2-1b-instruct-v1:0",
+        to="meta.llama3-2-1b-instruct-v1:0",
+    ),
+    **_alias_entries(
+        "guardrail",
+        "apply-guardrail",
+        to=APPLY_GUARDRAIL_ID,
     ),
     **_alias_entries(
         "llama4",
@@ -172,6 +192,10 @@ def _is_imported_model(model_id: str) -> bool:
     return ":imported-model/" in model_id
 
 
+def _is_apply_guardrail(model_id: str) -> bool:
+    return model_id == APPLY_GUARDRAIL_ID
+
+
 
 def _load_model_map() -> dict[str, str]:
     mapping = dict(_BUILTIN_MODEL_ALIASES)
@@ -206,7 +230,12 @@ def _resolve_model(request_model: Any) -> tuple[str, str]:
 
     name = request_model.strip()
     if name in MODEL_MAP:
-        return name, MODEL_MAP[name]
+        bedrock_model_id = MODEL_MAP[name]
+        if _is_apply_guardrail(bedrock_model_id) and not GUARDRAIL_ID:
+            raise ValueError(
+                "apply-guardrail requires GUARDRAIL_ID (SAM GuardrailId / repo variable)"
+            )
+        return name, bedrock_model_id
 
     if name.startswith(_RAW_MODEL_PREFIXES):
         return name, name
@@ -648,6 +677,65 @@ def _stream_converse(
     yield _sse("[DONE]")
 
 
+def _messages_to_guardrail_text(messages: list[dict[str, str]]) -> str:
+    return "\n\n".join(m["content"] for m in messages if m.get("content"))
+
+
+def _extract_guardrail_text(result: dict[str, Any]) -> str:
+    outputs = result.get("outputs") or result.get("output") or []
+    parts: list[str] = []
+    if isinstance(outputs, list):
+        for item in outputs:
+            if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"]:
+                parts.append(item["text"])
+    if parts:
+        return "".join(parts)
+    return json.dumps(
+        {
+            "action": result.get("action", "NONE"),
+            "assessments": result.get("assessments") or [],
+        }
+    )
+
+
+def _guardrail_usage(result: dict[str, Any]) -> dict[str, int]:
+    usage = result.get("usage") or {}
+    units = 0
+    for value in usage.values():
+        if isinstance(value, int):
+            units += value
+    return {"prompt_tokens": units, "completion_tokens": 0}
+
+
+def _infer_apply_guardrail(messages: list[dict[str, str]]) -> dict[str, Any]:
+    text = _messages_to_guardrail_text(messages)
+    result = bedrock.apply_guardrail(
+        guardrailIdentifier=GUARDRAIL_ID,
+        guardrailVersion=GUARDRAIL_VERSION,
+        source="INPUT",
+        content=[{"text": {"text": text}}],
+        outputScope="FULL",
+    )
+    return {
+        "text": _extract_guardrail_text(result),
+        "usage": _guardrail_usage(result),
+    }
+
+
+def _stream_apply_guardrail(
+    messages: list[dict[str, str]],
+    model: str,
+) -> Iterator[str]:
+    # Call ApplyGuardrail before emitting SSE so setup failures become HTTP 502.
+    inferred = _infer_apply_guardrail(messages)
+    completion_id, created = _new_stream_ids()
+    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
+    if inferred["text"]:
+        yield _sse_chunk(completion_id, created, model, {"content": inferred["text"]})
+    yield _sse_chunk(completion_id, created, model, {}, finish_reason="stop")
+    yield _sse("[DONE]")
+
+
 def _run_inference(
     messages: list[dict[str, str]],
     max_tokens: int,
@@ -655,6 +743,8 @@ def _run_inference(
     top_p: float | None,
     bedrock_model_id: str,
 ) -> dict[str, Any]:
+    if _is_apply_guardrail(bedrock_model_id):
+        return _infer_apply_guardrail(messages)
     if _is_imported_model(bedrock_model_id):
         return _infer_invoke_model(
             messages, max_tokens, temperature, top_p, bedrock_model_id
@@ -662,7 +752,6 @@ def _run_inference(
     return _infer_converse(
         messages, max_tokens, temperature, top_p, bedrock_model_id
     )
-
 
 
 def _stream_inference(
@@ -673,6 +762,8 @@ def _stream_inference(
     model: str,
     bedrock_model_id: str,
 ) -> Iterator[str]:
+    if _is_apply_guardrail(bedrock_model_id):
+        return _stream_apply_guardrail(messages, model)
     if _is_imported_model(bedrock_model_id):
         return _stream_invoke_model(
             messages, max_tokens, temperature, top_p, model, bedrock_model_id
