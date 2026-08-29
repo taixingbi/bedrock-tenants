@@ -5,8 +5,8 @@ Org **central** is the current AWS account (management / payer): billing and Org
 ```
 Organization (this account)
 └── OU inference
-    ├── mvp-bedrock-a   same Terraform Lambda
-    └── mvp-bedrock-b   same Terraform Lambda
+    ├── tb_bedrock_a   same Terraform Lambda
+    └── tb_bedrock_b   same Terraform Lambda
 ```
 
 Creating an Organization is one-way for the management account.

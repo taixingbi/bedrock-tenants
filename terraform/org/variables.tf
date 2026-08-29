@@ -17,12 +17,12 @@ variable "email_b" {
 
 variable "account_a_name" {
   type    = string
-  default = "mvp-bedrock-a"
+  default = "tb_bedrock_a"
 }
 
 variable "account_b_name" {
   type    = string
-  default = "mvp-bedrock-b"
+  default = "tb_bedrock_b"
 }
 
 variable "ou_name" {
