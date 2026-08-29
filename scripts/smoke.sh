@@ -16,9 +16,10 @@ die() { echo "error: $*" >&2; exit 1; }
 MODELS=(
   qwen3-next-80b-a3b
   nova-pro
+  nova-micro
   llama
   llama4
-  llama3.2-1b
+  llama4-maverick
   apply-guardrail
   gpt-oss
   gpt-oss-safeguard-20b

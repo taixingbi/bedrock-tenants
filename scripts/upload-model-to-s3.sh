@@ -29,7 +29,6 @@ MARKETPLACE_MODELS=(
   'nova-lite|nova-lite-v1|Amazon Nova Lite|amazon|nova-lite-v1|amazon.nova-lite-v1:0|nova-lite, amazon.nova-lite-v1:0|none'
   'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
   'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
-  'llama3.2-1b|llama-3.2-1b|Meta Llama 3.2 1B Instruct|meta|llama3-2-1b-instruct|meta.llama3-2-1b-instruct-v1:0|llama3.2-1b, llama-3.2-1b, us.meta.llama3-2-1b-instruct-v1:0|us'
   'guardrail|apply-guardrail|Amazon Bedrock ApplyGuardrail|amazon|apply-guardrail|apply-guardrail|guardrail, apply-guardrail|none'
   'llama4|llama4-maverick|llama-4-maverick|Meta Llama 4 Maverick 17B Instruct|meta|llama4-maverick-17b-instruct|meta.llama4-maverick-17b-instruct-v1:0|llama4, llama4-maverick, llama-4-maverick, us.meta.llama4-maverick-17b-instruct-v1:0|us'
   'llama4-scout|llama-4-scout|Meta Llama 4 Scout 17B Instruct|meta|llama4-scout-17b-instruct|meta.llama4-scout-17b-instruct-v1:0|llama4-scout, llama-4-scout, us.meta.llama4-scout-17b-instruct-v1:0|us'
@@ -54,7 +53,7 @@ usage() {
 Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
-  nova-lite / nova-pro / llama / llama3.2-1b / llama4 / llama4-maverick / llama4-scout
+  nova-lite / nova-pro / llama / llama4 / llama4-maverick / llama4-scout
   apply-guardrail / guardrail
   gpt-oss / gpt-oss-20b / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek / deepseek-r1
   qwen3-next-80b-a3b / qwen3-32b

@@ -54,6 +54,8 @@ def _alias_entries(*names: str, to: str) -> dict[str, str]:
 # Friendly request names → Bedrock model ID / imported-model ARN.
 _BUILTIN_MODEL_ALIASES: dict[str, str] = {
     **_alias_entries("nova-lite", "amazon.nova-lite-v1:0", to="amazon.nova-lite-v1:0"),
+    **_alias_entries("nova-micro", "amazon.nova-micro-v1:0", to="amazon.nova-micro-v1:0"),
+    **_alias_entries("us.amazon.nova-micro-v1:0", to="us.amazon.nova-micro-v1:0"),
     **_alias_entries("nova-pro", "amazon.nova-pro-v1:0", to="amazon.nova-pro-v1:0"),
     **_alias_entries("us.amazon.nova-pro-v1:0", to="us.amazon.nova-pro-v1:0"),
     # Meta Llama — default to US geo inference profiles (on-demand).
@@ -67,16 +69,6 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
     **_alias_entries(
         "meta.llama3-3-70b-instruct-v1:0",
         to="meta.llama3-3-70b-instruct-v1:0",
-    ),
-    **_alias_entries(
-        "llama3.2-1b",
-        "llama-3.2-1b",
-        "us.meta.llama3-2-1b-instruct-v1:0",
-        to="us.meta.llama3-2-1b-instruct-v1:0",
-    ),
-    **_alias_entries(
-        "meta.llama3-2-1b-instruct-v1:0",
-        to="meta.llama3-2-1b-instruct-v1:0",
     ),
     **_alias_entries(
         "guardrail",

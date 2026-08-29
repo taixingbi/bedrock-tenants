@@ -37,8 +37,8 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `nova-pro` / `amazon.nova-pro-v1:0` | `amazon.nova-pro-v1:0` | Converse |
 | `us.amazon.nova-pro-v1:0` | US geo inference profile | Converse |
 | `nova-lite` / `amazon.nova-lite-v1:0` | `amazon.nova-lite-v1:0` | Converse |
+| `nova-micro` / `amazon.nova-micro-v1:0` | `amazon.nova-micro-v1:0` | Converse |
 | `llama` / `llama3.3` / `llama-3.3-70b` | `us.meta.llama3-3-70b-instruct-v1:0` | Converse |
-| `llama3.2-1b` / `llama-3.2-1b` | `us.meta.llama3-2-1b-instruct-v1:0` | Converse |
 | `apply-guardrail` / `guardrail` | ApplyGuardrail (not an FM) | ApplyGuardrail |
 | `llama4` / `llama4-maverick` | `us.meta.llama4-maverick-17b-instruct-v1:0` | Converse |
 | `llama4-scout` | `us.meta.llama4-scout-17b-instruct-v1:0` | Converse |
@@ -63,7 +63,6 @@ Recommended open models (us-east-1, Bedrock Runtime):
 
 | Model | 参数量 | Alias | Bedrock ID | us-east-1 | Bedrock Runtime | 推荐度 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Llama 3.2 1B Instruct | 1B | `llama3.2-1b` | `us.meta.llama3-2-1b-instruct-v1:0` | ⚠️ EOL 2026-07-07 | ✅ | ⭐ |
 | Ministral 3 3B | 3B | `ministral-3b` | `mistral.ministral-3-3b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐ |
 | Gemma 3 4B IT | 4B | `gemma-3-4b` | `google.gemma-3-4b-it` | ✅ | ✅ | ⭐⭐⭐ |
 | Ministral 3 8B | 8B | `ministral-8b` | `mistral.ministral-3-8b-instruct` | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
@@ -114,17 +113,12 @@ Enable Meta model access in the Bedrock console. Friendly aliases default to the
 | Alias | Bedrock ID |
 | --- | --- |
 | `llama` / `llama3.3` | `us.meta.llama3-3-70b-instruct-v1:0` |
-| `llama3.2-1b` / `llama-3.2-1b` | `us.meta.llama3-2-1b-instruct-v1:0` |
 | `llama4` / `llama4-maverick` | `us.meta.llama4-maverick-17b-instruct-v1:0` |
 | `llama4-scout` | `us.meta.llama4-scout-17b-instruct-v1:0` |
-
-Llama 3.2 1B Instruct is **legacy**; AWS listed EOL as 2026-07-07. On-demand calls may fail. Prefer `ministral-3b` if you need a small live model.
 
 ```bash
 ./scripts/upload-model-to-s3.sh llama
 # → s3://bedrock-models-646821141010/meta/llama3-3-70b-instruct/model-manifest.json
-./scripts/upload-model-to-s3.sh llama3.2-1b
-# → s3://bedrock-models-646821141010/meta/llama3-2-1b-instruct/model-manifest.json
 ./scripts/upload-model-to-s3.sh llama4
 # → s3://bedrock-models-646821141010/meta/llama4-maverick-17b-instruct/model-manifest.json
 ```
@@ -373,20 +367,6 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
   -d '{
     "model": "llama",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{model, answer: .choices[0].message.content, usage}'
-```
-
-Meta Llama 3.2 1B Instruct:
-
-```bash
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "llama3.2-1b",
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0
