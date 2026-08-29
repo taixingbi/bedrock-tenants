@@ -3,11 +3,11 @@
 # Usage: bash example.md
 set -euo pipefail
 
-FUNCTION_URL=$(aws cloudformation describe-stacks \
+FUNCTION_URL="${FUNCTION_URL:-$(aws cloudformation describe-stacks \
   --region us-east-1 \
   --stack-name bedrock-inference-mvp \
   --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
-  --output text)
+  --output text)}"
 INFERENCE_API_KEY="${INFERENCE_API_KEY:-1234}"
 
 # Non-stream → JSON (pipe to jq). Stream → SSE (curl -N, do not pipe to jq).

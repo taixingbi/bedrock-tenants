@@ -67,26 +67,78 @@ jobs:
           API_KEY: ${{ secrets.INFERENCE_API_KEY }}
           GUARDRAIL_ID: ${{ vars.GUARDRAIL_ID }}
           GUARDRAIL_VERSION: ${{ vars.GUARDRAIL_VERSION }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: ./scripts/sam-deploy.sh
+
+  deploy-members:
+    name: Deploy member ${{ matrix.account }}
+    if: ${{ vars.ACCOUNT_A_ID != '' || vars.ACCOUNT_B_ID != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        account: [a, b]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve member account
+        id: member
         run: |
-          MODEL_ID="${MODEL_ID:-amazon.nova-lite-v1:0}"
-          # Empty ModelMap is fine; marketplace aliases are built into the app.
-          PARAMS=(
-            "ModelId=${MODEL_ID}"
-            "ApiKey=${API_KEY}"
-          )
-          if [ -n "${MODEL_MAP}" ]; then
-            PARAMS+=("ModelMap=${MODEL_MAP}")
+          if [ "${{ matrix.account }}" = a ]; then
+            echo "id=${{ vars.ACCOUNT_A_ID }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "id=${{ vars.ACCOUNT_B_ID }}" >> "$GITHUB_OUTPUT"
           fi
-          if [ -n "${GUARDRAIL_ID}" ]; then
-            PARAMS+=("GuardrailId=${GUARDRAIL_ID}")
+
+      - name: Set up Python
+        if: steps.member.outputs.id != ''
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install SAM CLI
+        if: steps.member.outputs.id != ''
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        if: steps.member.outputs.id != ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ steps.member.outputs.id }}:role/OrganizationAccountAccessRole
+          role-session-name: gha-deploy-${{ matrix.account }}
+          role-skip-session-tagging: true
+
+      - name: Build
+        if: steps.member.outputs.id != ''
+        run: sam build
+
+      - name: Check required secrets
+        if: steps.member.outputs.id != ''
+        env:
+          API_KEY: ${{ secrets.INFERENCE_API_KEY }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "::error::Missing repository secret INFERENCE_API_KEY"
+            exit 1
           fi
-          if [ -n "${GUARDRAIL_VERSION}" ]; then
-            PARAMS+=("GuardrailVersion=${GUARDRAIL_VERSION}")
-          fi
-          sam deploy \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --stack-name bedrock-inference-mvp \
-            --resolve-s3 \
-            --capabilities CAPABILITY_IAM \
-            --parameter-overrides "${PARAMS[@]}"
+
+      - name: Deploy
+        if: steps.member.outputs.id != ''
+        env:
+          MODEL_ID: ${{ vars.MODEL_ID }}
+          MODEL_MAP: ${{ vars.MODEL_MAP }}
+          API_KEY: ${{ secrets.INFERENCE_API_KEY }}
+          GUARDRAIL_ID: ${{ vars.GUARDRAIL_ID }}
+          GUARDRAIL_VERSION: ${{ vars.GUARDRAIL_VERSION }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: ./scripts/sam-deploy.sh
+
+      - name: Skip unset account
+        if: steps.member.outputs.id == ''
+        run: echo "ACCOUNT_${{ matrix.account }} ID not set; skipped"
