@@ -1,31 +1,44 @@
 # Multi-account org (central + A + B)
 
-Org **central** is the current AWS account (management / payer): billing and Organizations only. **Account A** and **Account B** each run the same Bedrock inference stack as this repo (`bedrock-inference-mvp`). No central Guardrail.
+Org **central** is the current AWS account (management / payer): billing and Organizations only. **Account A** and **Account B** each run the same Bedrock inference Lambda (`bedrock-inference-mvp`). No central Guardrail.
 
 ```
 Organization (this account)
 └── OU inference
-    ├── mvp-bedrock-a   same SAM app
-    └── mvp-bedrock-b   same SAM app
+    ├── mvp-bedrock-a   same Terraform Lambda
+    └── mvp-bedrock-b   same Terraform Lambda
 ```
 
-Creating an Organization is one-way for the management account. You need **two unused email addresses**.
+Creating an Organization is one-way for the management account.
 
-## 1. Set emails, then push
+Member-account emails are Terraform defaults in [`terraform/org/variables.tf`](../terraform/org/variables.tf):
 
-Add repository **variables** (or secrets) `EMAIL_A` and `EMAIL_B`. Management-account keys stay in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` and need Organizations plus `sts:AssumeRole`.
+- A: `tb_bedrock_a@gmail.com`
+- B: `tb_bedrock_b@gmail.com`
+
+Do not change those emails after the accounts exist (Terraform would try to replace the account). Override only before first create: `TF_VAR_email_a` / `TF_VAR_email_b`.
+
+## 1. OIDC role, then push
+
+GitHub assumes a management-account role over OIDC (no `AWS_ACCESS_KEY_ID`). One-time setup from this account:
+
+```bash
+./scripts/setup-gha-oidc-role.sh
+```
+
+Then set variable `AWS_ROLE_ARN` to the printed role. That role needs Organizations plus `sts:AssumeRole` on `OrganizationAccountAccessRole` in A and B.
 
 Push to `main`. The **Deploy** workflow:
 
-1. Deploys this account (existing stack)
-2. Creates the Organization if needed, OU `inference`, and accounts `mvp-bedrock-a` / `mvp-bedrock-b` (idempotent — reuses them on later pushes)
+1. Deploys this account with Terraform
+2. `terraform apply`s `terraform/org` (Organization, OU `inference`, accounts A and B)
 3. Waits until `OrganizationAccountAccessRole` works in each member
-4. Assumes that role and `sam deploy`s the same stack into A and B
+4. Assumes that role and `terraform apply`s the same Lambda into A and B
 
-To bootstrap locally instead of waiting for CI:
+To bootstrap locally:
 
 ```bash
-./scripts/bootstrap-org.sh EMAIL_A EMAIL_B
+./scripts/bootstrap-org.sh
 ```
 
 ## 2. Deploy locally (optional)
@@ -56,9 +69,9 @@ aws sts assume-role \
   --role-session-name print-url \
   --query 'Credentials' --output json
 # export the three keys, then:
-aws cloudformation describe-stacks \
+aws lambda get-function-url-config \
   --region us-east-1 \
-  --stack-name bedrock-inference-mvp \
-  --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
+  --function-name bedrock-inference-mvp \
+  --query FunctionUrl \
   --output text
 ```

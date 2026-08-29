@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assume OrganizationAccountAccessRole in a member account and sam deploy.
+# Assume OrganizationAccountAccessRole in a member account and terraform apply.
 #
 # Usage:
 #   ./scripts/deploy-member.sh <account-id>
@@ -15,6 +15,7 @@ ACCOUNT_ID="${1:-}"
 ROLE_NAME="${ORG_ACCESS_ROLE:-OrganizationAccountAccessRole}"
 REGION="${AWS_REGION:-us-east-1}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FUNCTION_NAME="${FUNCTION_NAME:-bedrock-inference-mvp}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -24,7 +25,7 @@ export API_KEY
 [[ -n "${ACCOUNT_ID}" ]] || die "usage: $0 <account-id>"
 [[ -n "${API_KEY}" ]] || die "API_KEY or INFERENCE_API_KEY is required"
 command -v aws >/dev/null || die "aws CLI required"
-command -v sam >/dev/null || die "SAM CLI required"
+command -v terraform >/dev/null || die "terraform required"
 
 ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 echo "Assuming ${ROLE_ARN}…"
@@ -36,18 +37,13 @@ creds="$(aws sts assume-role \
 read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<<"${creds}"
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION="${REGION}"
 
-echo "Building…"
-(
-  cd "${ROOT}"
-  sam build
-  echo "Deploying bedrock-inference-mvp to ${ACCOUNT_ID} (${REGION})…"
-  "${ROOT}/scripts/sam-deploy.sh"
-)
+echo "Deploying ${FUNCTION_NAME} to ${ACCOUNT_ID} (${REGION})…"
+"${ROOT}/scripts/tf-deploy.sh"
 
-FUNCTION_URL="$(aws cloudformation describe-stacks \
+FUNCTION_URL="$(aws lambda get-function-url-config \
   --region "${REGION}" \
-  --stack-name bedrock-inference-mvp \
-  --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
+  --function-name "${FUNCTION_NAME}" \
+  --query FunctionUrl \
   --output text)"
 FUNCTION_URL="${FUNCTION_URL%/}/"
 echo

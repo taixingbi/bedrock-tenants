@@ -3,10 +3,10 @@
 # Usage: bash example.md
 set -euo pipefail
 
-FUNCTION_URL="${FUNCTION_URL:-$(aws cloudformation describe-stacks \
+FUNCTION_URL="${FUNCTION_URL:-$(aws lambda get-function-url-config \
   --region us-east-1 \
-  --stack-name bedrock-inference-mvp \
-  --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
+  --function-name bedrock-inference-mvp \
+  --query FunctionUrl \
   --output text)}"
 FUNCTION_URL="${FUNCTION_URL%/}/"
 [[ -n "${FUNCTION_URL}" && "${FUNCTION_URL}" != "None/" && "${FUNCTION_URL}" != "/" ]] \

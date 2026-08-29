@@ -1,138 +1,91 @@
 #!/usr/bin/env bash
-# Create (or reuse) an AWS Organization, OU "inference", and member accounts A/B.
+# Terraform-apply the Organization, OU inference, and accounts A/B.
+# Emails live in terraform/org/variables.tf (override with TF_VAR_email_a / TF_VAR_email_b).
 # Run with management-account credentials. Creating an Organization is one-way.
 #
 # Usage:
-#   ./scripts/bootstrap-org.sh EMAIL_A EMAIL_B
-#
-# Env:
-#   ACCOUNT_A_NAME   default mvp-bedrock-a
-#   ACCOUNT_B_NAME   default mvp-bedrock-b
-#   OU_NAME          default inference
-#   ORG_ACCESS_ROLE  default OrganizationAccountAccessRole
+#   ./scripts/bootstrap-org.sh
 set -euo pipefail
 
-EMAIL_A="${1:-${EMAIL_A:-}}"
-EMAIL_B="${2:-${EMAIL_B:-}}"
-NAME_A="${ACCOUNT_A_NAME:-mvp-bedrock-a}"
-NAME_B="${ACCOUNT_B_NAME:-mvp-bedrock-b}"
-OU_NAME="${OU_NAME:-inference}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ORG_DIR="${ROOT}/terraform/org"
+REGION="${AWS_REGION:-us-east-1}"
 ROLE_NAME="${ORG_ACCESS_ROLE:-OrganizationAccountAccessRole}"
 
 die() { echo "error: $*" >&2; exit 1; }
-
-[[ -n "${EMAIL_A}" && -n "${EMAIL_B}" ]] || die "usage: $0 EMAIL_A EMAIL_B"
-[[ "${EMAIL_A}" != "${EMAIL_B}" ]] || die "EMAIL_A and EMAIL_B must be different unused addresses"
 command -v aws >/dev/null || die "aws CLI required"
+command -v terraform >/dev/null || die "terraform required"
+
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+BUCKET="bedrock-inference-tfstate-${ACCOUNT_ID}"
+
+if ! aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
+  echo "Creating Terraform state bucket ${BUCKET}…"
+  if [[ "${REGION}" == "us-east-1" ]]; then
+    aws s3api create-bucket --bucket "${BUCKET}" --region "${REGION}"
+  else
+    aws s3api create-bucket --bucket "${BUCKET}" --region "${REGION}" \
+      --create-bucket-configuration "LocationConstraint=${REGION}"
+  fi
+  aws s3api put-bucket-versioning --bucket "${BUCKET}" \
+    --versioning-configuration Status=Enabled
+  aws s3api put-public-access-block --bucket "${BUCKET}" \
+    --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  aws s3api put-bucket-encryption --bucket "${BUCKET}" \
+    --server-side-encryption-configuration \
+    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+fi
+
+cd "${ORG_DIR}"
+terraform init -input=false -reconfigure \
+  -backend-config="bucket=${BUCKET}" \
+  -backend-config="key=org.tfstate" \
+  -backend-config="region=${REGION}"
+
+import_if_missing() {
+  local addr="$1" id="${2:-}"
+  [[ -n "${id}" && "${id}" != "None" && "${id}" != "null" ]] || return 0
+  if terraform state show "${addr}" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Importing ${addr} ${id}…"
+  terraform import -input=false "${addr}" "${id}"
+}
 
 if aws organizations describe-organization >/dev/null 2>&1; then
-  echo "Using existing organization"
-else
-  echo "Creating organization (ALL feature set)…"
-  aws organizations create-organization --feature-set ALL >/dev/null
-fi
+  ORG_ID="$(aws organizations describe-organization --query 'Organization.Id' --output text)"
+  ROOT_ID="$(aws organizations list-roots --query 'Roots[0].Id' --output text)"
+  import_if_missing aws_organizations_organization.this "${ORG_ID}"
 
-read -r ORG_ID MGMT_ID < <(aws organizations describe-organization \
-  --query '[Organization.Id, Organization.MasterAccountId]' \
-  --output text)
-ROOT_ID="$(aws organizations list-roots --query 'Roots[0].Id' --output text)"
-echo "Organization ${ORG_ID}  management ${MGMT_ID}  root ${ROOT_ID}"
-
-ACCOUNTS_TSV="$(aws organizations list-accounts \
-  --query "Accounts[?Status!='SUSPENDED'].[Id,Name,Email]" \
-  --output text)"
-
-OU_ID="$(aws organizations list-organizational-units-for-parent \
-  --parent-id "${ROOT_ID}" \
-  --query "OrganizationalUnits[?Name=='${OU_NAME}'].Id | [0]" \
-  --output text)"
-if [[ -z "${OU_ID}" || "${OU_ID}" == "None" ]]; then
-  echo "Creating OU ${OU_NAME}…"
-  OU_ID="$(aws organizations create-organizational-unit \
+  OU_NAME="${TF_VAR_ou_name:-inference}"
+  OU_ID="$(aws organizations list-organizational-units-for-parent \
     --parent-id "${ROOT_ID}" \
-    --name "${OU_NAME}" \
-    --query 'OrganizationalUnit.Id' \
+    --query "OrganizationalUnits[?Name=='${OU_NAME}'].Id | [0]" \
     --output text)"
+  import_if_missing aws_organizations_organizational_unit.inference "${OU_ID}"
+
+  EMAIL_A="${TF_VAR_email_a:-tb_bedrock_a@gmail.com}"
+  EMAIL_B="${TF_VAR_email_b:-tb_bedrock_b@gmail.com}"
+  ID_A="$(aws organizations list-accounts \
+    --query "Accounts[?Email=='${EMAIL_A}' && Status!='SUSPENDED'].Id | [0]" \
+    --output text)"
+  ID_B="$(aws organizations list-accounts \
+    --query "Accounts[?Email=='${EMAIL_B}' && Status!='SUSPENDED'].Id | [0]" \
+    --output text)"
+  import_if_missing aws_organizations_account.a "${ID_A}"
+  import_if_missing aws_organizations_account.b "${ID_B}"
 fi
-echo "OU ${OU_NAME}  ${OU_ID}"
 
-find_account() {
-  local name="$1" email="$2"
-  local id
-  id="$(awk -F'\t' -v e="${email}" '$3==e {print $1; exit}' <<<"${ACCOUNTS_TSV}")"
-  if [[ -n "${id}" ]]; then
-    echo "${id}"
-    return 0
-  fi
-  id="$(awk -F'\t' -v n="${name}" '$2==n {print $1; exit}' <<<"${ACCOUNTS_TSV}")"
-  if [[ -n "${id}" ]]; then
-    echo "${id}"
-    return 0
-  fi
-  return 1
-}
+export TF_VAR_aws_region="${REGION}"
+export TF_VAR_role_name="${ROLE_NAME}"
+terraform apply -input=false -auto-approve
 
-wait_create_account() {
-  local request_id="$1" name="$2"
-  local state account_id reason
-  while true; do
-    read -r state account_id reason < <(aws organizations describe-create-account-status \
-      --create-account-request-id "${request_id}" \
-      --query 'CreateAccountStatus.[State,AccountId,FailureReason]' \
-      --output text)
-    case "${state}" in
-      SUCCEEDED)
-        echo "${account_id}"
-        return 0
-        ;;
-      FAILED)
-        die "create-account ${name} failed: ${reason:-unknown}"
-        ;;
-      IN_PROGRESS)
-        echo "  waiting for ${name}…"
-        sleep 15
-        ;;
-      *)
-        die "create-account ${name} unexpected state ${state}"
-        ;;
-    esac
-  done
-}
-
-ensure_account() {
-  local name="$1" email="$2"
-  local id request_id
-  if id="$(find_account "${name}" "${email}")"; then
-    echo "Reusing account ${name}  ${id}" >&2
-    echo "${id}"
-    return 0
-  fi
-  echo "Creating account ${name} <${email}>…" >&2
-  request_id="$(aws organizations create-account \
-    --email "${email}" \
-    --account-name "${name}" \
-    --role-name "${ROLE_NAME}" \
-    --query 'CreateAccountStatus.Id' \
-    --output text)"
-  wait_create_account "${request_id}" "${name}"
-}
-
-move_into_ou() {
-  local account_id="$1"
-  local parent
-  parent="$(aws organizations list-parents \
-    --child-id "${account_id}" \
-    --query 'Parents[0].Id' \
-    --output text)"
-  if [[ "${parent}" == "${OU_ID}" ]]; then
-    return 0
-  fi
-  echo "Moving ${account_id} → OU ${OU_NAME}…"
-  aws organizations move-account \
-    --account-id "${account_id}" \
-    --source-parent-id "${parent}" \
-    --destination-parent-id "${OU_ID}"
-}
+ACCOUNT_A_ID="$(terraform output -raw account_a_id)"
+ACCOUNT_B_ID="$(terraform output -raw account_b_id)"
+ORG_ID="$(terraform output -raw organization_id)"
+MGMT_ID="$(terraform output -raw management_account_id)"
+OU_ID="$(terraform output -raw ou_id)"
 
 wait_role() {
   local account_id="$1"
@@ -154,15 +107,8 @@ wait_role() {
   die "timed out waiting for ${role_arn}"
 }
 
-ACCOUNT_A_ID="$(ensure_account "${NAME_A}" "${EMAIL_A}")"
-ACCOUNT_B_ID="$(ensure_account "${NAME_B}" "${EMAIL_B}")"
-move_into_ou "${ACCOUNT_A_ID}"
-move_into_ou "${ACCOUNT_B_ID}"
 wait_role "${ACCOUNT_A_ID}"
 wait_role "${ACCOUNT_B_ID}"
-
-ROLE_A="arn:aws:iam::${ACCOUNT_A_ID}:role/${ROLE_NAME}"
-ROLE_B="arn:aws:iam::${ACCOUNT_B_ID}:role/${ROLE_NAME}"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
@@ -177,11 +123,11 @@ Done.
 
   Organization     ${ORG_ID}
   Management       ${MGMT_ID}
-  OU ${OU_NAME}    ${OU_ID}
-  Account A        ${ACCOUNT_A_ID}  ${NAME_A}  ${ROLE_A}
-  Account B        ${ACCOUNT_B_ID}  ${NAME_B}  ${ROLE_B}
+  OU               ${OU_ID}
+  Account A        ${ACCOUNT_A_ID}
+  Account B        ${ACCOUNT_B_ID}
 
-Push to main creates or reuses these accounts, then deploys the stack into each.
+Emails are in terraform/org/variables.tf. Push deploys the Lambda into each account.
 Or deploy locally:
 
   ./scripts/deploy-member.sh ${ACCOUNT_A_ID}

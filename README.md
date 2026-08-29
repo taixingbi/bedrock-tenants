@@ -6,14 +6,13 @@ Python Lambda with a Function URL that sends prompts to Amazon Bedrock via the b
 
 1. AWS account with permission to create Lambda, IAM roles, and call Bedrock
 2. [Model access enabled](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) for marketplace models (default: `amazon.nova-lite-v1:0`), **or** a successfully [imported custom model](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html)
-3. [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) for local builds
-4. GitHub repository secrets (Settings → Secrets and variables → Actions):
+3. [Terraform](https://developer.hashicorp.com/terraform/install) (>= 1.5) and Python 3.12 for local package/deploy
+4. GitHub Actions OIDC (no long-lived AWS keys). From the management account run `./scripts/setup-gha-oidc-role.sh`, then add:
 
-| Secret | Purpose |
-| --- | --- |
-| `AWS_ACCESS_KEY_ID` | Deploy credentials |
-| `AWS_SECRET_ACCESS_KEY` | Deploy credentials |
-| `INFERENCE_API_KEY` | Shared secret clients must send as `x-api-key` |
+| Name | Where | Purpose |
+| --- | --- | --- |
+| `AWS_ROLE_ARN` | Variable | Management-account role assumed via GitHub OIDC |
+| `INFERENCE_API_KEY` | Secret | Shared secret clients must send as `x-api-key` |
 
 Optional repository variables:
 
@@ -24,12 +23,10 @@ Optional repository variables:
 | `MODEL_MAP` | Optional JSON object of request alias → Bedrock ID/ARN (merges with built-in aliases) |
 | `GUARDRAIL_ID` | Bedrock Guardrail ID for `apply-guardrail` |
 | `GUARDRAIL_VERSION` | Guardrail version (defaults to `DRAFT`) |
-| `EMAIL_A` | Unused email — push to `main` creates (or reuses) member account A |
-| `EMAIL_B` | Unused email — same for member account B |
 
-Multi-account org (push creates A and B, then deploys the stack into each): see [org/README.md](org/README.md).
+Multi-account org (Terraform emails in `terraform/org/variables.tf`; push creates A and B): see [org/README.md](org/README.md).
 
-The Lambda talks to Bedrock with its **execution role**, not with the deploy access keys. Bedrock is managed inference — you do not choose a GPU.
+The Lambda talks to Bedrock with its **execution role**, not with the GitHub deploy role. Bedrock is managed inference — you do not choose a GPU.
 
 ## Models
 
@@ -307,26 +304,25 @@ Set `"stream": true` to receive OpenAI SSE (`text/event-stream`) chunks (`chat.c
 
 ## Deploy
 
-Push to `main` or run the **Deploy** workflow manually. Stack name: `bedrock-inference-mvp` (region defaults to `us-east-1`).
+Push to `main` or run the **Deploy** workflow manually. Lambda name: `bedrock-inference-mvp` (region defaults to `us-east-1`). The first Terraform apply deletes the old SAM/CloudFormation stack of the same name if it still exists.
 
 After deploy, get the Function URL (include `--region` if `aws configure` has no default):
 
 ```bash
-aws cloudformation describe-stacks \
+aws lambda get-function-url-config \
   --region us-east-1 \
-  --stack-name bedrock-inference-mvp \
-  --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
+  --function-name bedrock-inference-mvp \
+  --query FunctionUrl \
   --output text
 ```
 
-Or in the AWS Console: CloudFormation → stack `bedrock-inference-mvp` → **Outputs** → `InferenceFunctionUrl` (or Lambda → `bedrock-inference-mvp` → **Configuration** → **Function URL**).
+Or in the AWS Console: Lambda → `bedrock-inference-mvp` → **Configuration** → **Function URL**.
 
 ### Manual deploy
 
 ```bash
 export API_KEY='your-shared-secret'
-sam build
-./scripts/sam-deploy.sh
+./scripts/tf-deploy.sh
 ```
 
 ## Call the API
@@ -334,10 +330,10 @@ sam build
 Example (`ministral-8b`):
 
 ```bash
-FUNCTION_URL=$(aws cloudformation describe-stacks \
+FUNCTION_URL=$(aws lambda get-function-url-config \
   --region us-east-1 \
-  --stack-name bedrock-inference-mvp \
-  --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
+  --function-name bedrock-inference-mvp \
+  --query FunctionUrl \
   --output text)
 INFERENCE_API_KEY='1234'
 
