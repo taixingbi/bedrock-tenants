@@ -19,126 +19,79 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install SAM CLI
-        uses: aws-actions/setup-sam@v2
-        with:
-          use-installer: true
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+      - name: Build and deploy
+        uses: ./.github/actions/sam-deploy
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Build
-        run: sam build
-
-      - name: Check required secrets
         env:
+          AWS_REGION: ${{ env.AWS_REGION }}
           API_KEY: ${{ secrets.INFERENCE_API_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: |
-          missing=0
-          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-            echo "::error::Missing repository secret AWS_ACCESS_KEY_ID"
-            missing=1
-          fi
-          if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-            echo "::error::Missing repository secret AWS_SECRET_ACCESS_KEY"
-            missing=1
-          fi
-          if [ -z "$API_KEY" ]; then
-            echo "::error::Missing repository secret INFERENCE_API_KEY. Add it under Settings → Secrets and variables → Actions → Repository secrets (name must match exactly)."
-            missing=1
-          fi
-          exit "$missing"
-
-      - name: Deploy
-        env:
           MODEL_ID: ${{ vars.MODEL_ID }}
           MODEL_MAP: ${{ vars.MODEL_MAP }}
-          API_KEY: ${{ secrets.INFERENCE_API_KEY }}
           GUARDRAIL_ID: ${{ vars.GUARDRAIL_ID }}
           GUARDRAIL_VERSION: ${{ vars.GUARDRAIL_VERSION }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-        run: ./scripts/sam-deploy.sh
 
-  deploy-members:
-    name: Deploy member ${{ matrix.account }}
-    if: ${{ vars.ACCOUNT_A_ID != '' || vars.ACCOUNT_B_ID != '' }}
+  bootstrap:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        account: [a, b]
+    outputs:
+      account_a_id: ${{ steps.org.outputs.ACCOUNT_A_ID }}
+      account_b_id: ${{ steps.org.outputs.ACCOUNT_B_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Resolve member account
-        id: member
+      - name: Check emails
+        env:
+          EMAIL_A: ${{ vars.EMAIL_A || secrets.EMAIL_A }}
+          EMAIL_B: ${{ vars.EMAIL_B || secrets.EMAIL_B }}
         run: |
-          if [ "${{ matrix.account }}" = a ]; then
-            echo "id=${{ vars.ACCOUNT_A_ID }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "id=${{ vars.ACCOUNT_B_ID }}" >> "$GITHUB_OUTPUT"
+          if [ -z "$EMAIL_A" ] || [ -z "$EMAIL_B" ]; then
+            echo "::error::Set repository variables EMAIL_A and EMAIL_B (two unused addresses) so push can create accounts A and B."
+            exit 1
           fi
 
-      - name: Set up Python
-        if: steps.member.outputs.id != ''
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install SAM CLI
-        if: steps.member.outputs.id != ''
-        uses: aws-actions/setup-sam@v2
-        with:
-          use-installer: true
-
       - name: Configure AWS credentials
-        if: steps.member.outputs.id != ''
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::${{ steps.member.outputs.id }}:role/OrganizationAccountAccessRole
+
+      - name: Create or reuse accounts A and B
+        id: org
+        env:
+          EMAIL_A: ${{ vars.EMAIL_A || secrets.EMAIL_A }}
+          EMAIL_B: ${{ vars.EMAIL_B || secrets.EMAIL_B }}
+        run: ./scripts/bootstrap-org.sh
+
+  deploy-members:
+    name: Deploy member ${{ matrix.account }}
+    needs: bootstrap
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - account: a
+            id: ${{ needs.bootstrap.outputs.account_a_id }}
+          - account: b
+            id: ${{ needs.bootstrap.outputs.account_b_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build and deploy
+        uses: ./.github/actions/sam-deploy
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::${{ matrix.id }}:role/OrganizationAccountAccessRole
           role-session-name: gha-deploy-${{ matrix.account }}
-          role-skip-session-tagging: true
-
-      - name: Build
-        if: steps.member.outputs.id != ''
-        run: sam build
-
-      - name: Check required secrets
-        if: steps.member.outputs.id != ''
         env:
+          AWS_REGION: ${{ env.AWS_REGION }}
           API_KEY: ${{ secrets.INFERENCE_API_KEY }}
-        run: |
-          if [ -z "$API_KEY" ]; then
-            echo "::error::Missing repository secret INFERENCE_API_KEY"
-            exit 1
-          fi
-
-      - name: Deploy
-        if: steps.member.outputs.id != ''
-        env:
           MODEL_ID: ${{ vars.MODEL_ID }}
           MODEL_MAP: ${{ vars.MODEL_MAP }}
-          API_KEY: ${{ secrets.INFERENCE_API_KEY }}
           GUARDRAIL_ID: ${{ vars.GUARDRAIL_ID }}
           GUARDRAIL_VERSION: ${{ vars.GUARDRAIL_VERSION }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-        run: ./scripts/sam-deploy.sh
-
-      - name: Skip unset account
-        if: steps.member.outputs.id == ''
-        run: echo "ACCOUNT_${{ matrix.account }} ID not set; skipped"

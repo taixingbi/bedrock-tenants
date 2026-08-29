@@ -8,7 +8,10 @@ FUNCTION_URL="${FUNCTION_URL:-$(aws cloudformation describe-stacks \
   --stack-name bedrock-inference-mvp \
   --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
   --output text)}"
-INFERENCE_API_KEY="${INFERENCE_API_KEY:-1234}"
+FUNCTION_URL="${FUNCTION_URL%/}/"
+[[ -n "${FUNCTION_URL}" && "${FUNCTION_URL}" != "None/" && "${FUNCTION_URL}" != "/" ]] \
+  || { echo "error: FUNCTION_URL is empty" >&2; exit 1; }
+INFERENCE_API_KEY="${INFERENCE_API_KEY:-${API_KEY:-1234}}"
 
 # Non-stream → JSON (pipe to jq). Stream → SSE (curl -N, do not pipe to jq).
 

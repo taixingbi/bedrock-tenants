@@ -32,10 +32,15 @@ else
   aws organizations create-organization --feature-set ALL >/dev/null
 fi
 
-ORG_ID="$(aws organizations describe-organization --query 'Organization.Id' --output text)"
-MGMT_ID="$(aws organizations describe-organization --query 'Organization.MasterAccountId' --output text)"
+read -r ORG_ID MGMT_ID < <(aws organizations describe-organization \
+  --query '[Organization.Id, Organization.MasterAccountId]' \
+  --output text)
 ROOT_ID="$(aws organizations list-roots --query 'Roots[0].Id' --output text)"
 echo "Organization ${ORG_ID}  management ${MGMT_ID}  root ${ROOT_ID}"
+
+ACCOUNTS_TSV="$(aws organizations list-accounts \
+  --query "Accounts[?Status!='SUSPENDED'].[Id,Name,Email]" \
+  --output text)"
 
 OU_ID="$(aws organizations list-organizational-units-for-parent \
   --parent-id "${ROOT_ID}" \
@@ -54,17 +59,13 @@ echo "OU ${OU_NAME}  ${OU_ID}"
 find_account() {
   local name="$1" email="$2"
   local id
-  id="$(aws organizations list-accounts \
-    --query "Accounts[?Email=='${email}' && Status!='SUSPENDED'].Id | [0]" \
-    --output text)"
-  if [[ -n "${id}" && "${id}" != "None" ]]; then
+  id="$(awk -F'\t' -v e="${email}" '$3==e {print $1; exit}' <<<"${ACCOUNTS_TSV}")"
+  if [[ -n "${id}" ]]; then
     echo "${id}"
     return 0
   fi
-  id="$(aws organizations list-accounts \
-    --query "Accounts[?Name=='${name}' && Status=='ACTIVE'].Id | [0]" \
-    --output text)"
-  if [[ -n "${id}" && "${id}" != "None" ]]; then
+  id="$(awk -F'\t' -v n="${name}" '$2==n {print $1; exit}' <<<"${ACCOUNTS_TSV}")"
+  if [[ -n "${id}" ]]; then
     echo "${id}"
     return 0
   fi
@@ -73,26 +74,19 @@ find_account() {
 
 wait_create_account() {
   local request_id="$1" name="$2"
-  local state reason account_id
+  local state account_id reason
   while true; do
-    state="$(aws organizations describe-create-account-status \
+    read -r state account_id reason < <(aws organizations describe-create-account-status \
       --create-account-request-id "${request_id}" \
-      --query 'CreateAccountStatus.State' \
-      --output text)"
+      --query 'CreateAccountStatus.[State,AccountId,FailureReason]' \
+      --output text)
     case "${state}" in
       SUCCEEDED)
-        aws organizations describe-create-account-status \
-          --create-account-request-id "${request_id}" \
-          --query 'CreateAccountStatus.AccountId' \
-          --output text
+        echo "${account_id}"
         return 0
         ;;
       FAILED)
-        reason="$(aws organizations describe-create-account-status \
-          --create-account-request-id "${request_id}" \
-          --query 'CreateAccountStatus.FailureReason' \
-          --output text)"
-        die "create-account ${name} failed: ${reason}"
+        die "create-account ${name} failed: ${reason:-unknown}"
         ;;
       IN_PROGRESS)
         echo "  waiting for ${name}…"
@@ -140,13 +134,42 @@ move_into_ou() {
     --destination-parent-id "${OU_ID}"
 }
 
+wait_role() {
+  local account_id="$1"
+  local role_arn="arn:aws:iam::${account_id}:role/${ROLE_NAME}"
+  local i
+  for i in $(seq 1 40); do
+    if aws sts assume-role \
+      --role-arn "${role_arn}" \
+      --role-session-name "wait-${account_id}" \
+      --duration-seconds 900 \
+      --query 'Credentials.AccessKeyId' \
+      --output text >/dev/null 2>&1; then
+      echo "Role ready  ${role_arn}"
+      return 0
+    fi
+    echo "  waiting for ${role_arn}…"
+    sleep 15
+  done
+  die "timed out waiting for ${role_arn}"
+}
+
 ACCOUNT_A_ID="$(ensure_account "${NAME_A}" "${EMAIL_A}")"
 ACCOUNT_B_ID="$(ensure_account "${NAME_B}" "${EMAIL_B}")"
 move_into_ou "${ACCOUNT_A_ID}"
 move_into_ou "${ACCOUNT_B_ID}"
+wait_role "${ACCOUNT_A_ID}"
+wait_role "${ACCOUNT_B_ID}"
 
 ROLE_A="arn:aws:iam::${ACCOUNT_A_ID}:role/${ROLE_NAME}"
 ROLE_B="arn:aws:iam::${ACCOUNT_B_ID}:role/${ROLE_NAME}"
+
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  {
+    echo "ACCOUNT_A_ID=${ACCOUNT_A_ID}"
+    echo "ACCOUNT_B_ID=${ACCOUNT_B_ID}"
+  } >> "${GITHUB_OUTPUT}"
+fi
 
 cat <<EOF
 
@@ -158,12 +181,8 @@ Done.
   Account A        ${ACCOUNT_A_ID}  ${NAME_A}  ${ROLE_A}
   Account B        ${ACCOUNT_B_ID}  ${NAME_B}  ${ROLE_B}
 
-GitHub Actions variables (Settings → Secrets and variables → Actions):
-
-  ACCOUNT_A_ID=${ACCOUNT_A_ID}
-  ACCOUNT_B_ID=${ACCOUNT_B_ID}
-
-Deploy the current stack into a member account:
+Push to main creates or reuses these accounts, then deploys the stack into each.
+Or deploy locally:
 
   ./scripts/deploy-member.sh ${ACCOUNT_A_ID}
   ./scripts/deploy-member.sh ${ACCOUNT_B_ID}

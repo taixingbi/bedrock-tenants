@@ -5,7 +5,7 @@
 #   ./scripts/deploy-member.sh <account-id>
 #
 # Env:
-#   API_KEY          required (same as INFERENCE_API_KEY)
+#   API_KEY or INFERENCE_API_KEY  required
 #   ORG_ACCESS_ROLE  default OrganizationAccountAccessRole
 #   AWS_REGION       default us-east-1
 #   MODEL_ID, MODEL_MAP, GUARDRAIL_ID, GUARDRAIL_VERSION
@@ -18,8 +18,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 die() { echo "error: $*" >&2; exit 1; }
 
+API_KEY="${API_KEY:-${INFERENCE_API_KEY:-}}"
+export API_KEY
+
 [[ -n "${ACCOUNT_ID}" ]] || die "usage: $0 <account-id>"
-[[ -n "${API_KEY:-}" ]] || die "API_KEY is required"
+[[ -n "${API_KEY}" ]] || die "API_KEY or INFERENCE_API_KEY is required"
 command -v aws >/dev/null || die "aws CLI required"
 command -v sam >/dev/null || die "SAM CLI required"
 
@@ -46,6 +49,7 @@ FUNCTION_URL="$(aws cloudformation describe-stacks \
   --stack-name bedrock-inference-mvp \
   --query "Stacks[0].Outputs[?OutputKey=='InferenceFunctionUrl'].OutputValue" \
   --output text)"
+FUNCTION_URL="${FUNCTION_URL%/}/"
 echo
 echo "Account ${ACCOUNT_ID} Function URL:"
 echo "  ${FUNCTION_URL}"

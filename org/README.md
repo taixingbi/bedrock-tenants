@@ -11,36 +11,32 @@ Organization (this account)
 
 Creating an Organization is one-way for the management account. You need **two unused email addresses**.
 
-## 1. Bootstrap
+## 1. Set emails, then push
 
-From the management account:
+Add repository **variables** (or secrets) `EMAIL_A` and `EMAIL_B`. Management-account keys stay in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` and need Organizations plus `sts:AssumeRole`.
+
+Push to `main`. The **Deploy** workflow:
+
+1. Deploys this account (existing stack)
+2. Creates the Organization if needed, OU `inference`, and accounts `mvp-bedrock-a` / `mvp-bedrock-b` (idempotent — reuses them on later pushes)
+3. Waits until `OrganizationAccountAccessRole` works in each member
+4. Assumes that role and `sam deploy`s the same stack into A and B
+
+To bootstrap locally instead of waiting for CI:
 
 ```bash
 ./scripts/bootstrap-org.sh EMAIL_A EMAIL_B
 ```
 
-The script creates the org if needed, OU `inference`, accounts `mvp-bedrock-a` / `mvp-bedrock-b`, and prints `ACCOUNT_A_ID` / `ACCOUNT_B_ID`.
+## 2. Deploy locally (optional)
 
-Add those as GitHub Actions **variables** (Settings → Secrets and variables → Actions):
-
-| Variable | Purpose |
-| --- | --- |
-| `ACCOUNT_A_ID` | Member account A |
-| `ACCOUNT_B_ID` | Member account B |
-
-Existing secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `INFERENCE_API_KEY`) stay on the management account. The default role `OrganizationAccountAccessRole` in A/B trusts the management account, so those keys can assume it.
-
-## 2. Deploy the app into A and B
-
-Local (management credentials, `API_KEY` set):
+Management credentials, `API_KEY` or `INFERENCE_API_KEY` set:
 
 ```bash
-export API_KEY='your-shared-secret'
+export INFERENCE_API_KEY='your-shared-secret'
 ./scripts/deploy-member.sh ACCOUNT_A_ID
 ./scripts/deploy-member.sh ACCOUNT_B_ID
 ```
-
-Or push to `main`. The **Deploy** workflow still deploys this account, then (when `ACCOUNT_A_ID` / `ACCOUNT_B_ID` are set) assumes into each member and `sam deploy`s the same stack.
 
 Each member gets its own Function URL. Bedrock **model access is per account** — enable the same marketplace models in A and in B (console) as you did here.
 

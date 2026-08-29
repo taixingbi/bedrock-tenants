@@ -24,10 +24,10 @@ Optional repository variables:
 | `MODEL_MAP` | Optional JSON object of request alias → Bedrock ID/ARN (merges with built-in aliases) |
 | `GUARDRAIL_ID` | Bedrock Guardrail ID for `apply-guardrail` |
 | `GUARDRAIL_VERSION` | Guardrail version (defaults to `DRAFT`) |
-| `ACCOUNT_A_ID` | Member account A — deploy the same stack via `OrganizationAccountAccessRole` |
-| `ACCOUNT_B_ID` | Member account B — same as A |
+| `EMAIL_A` | Unused email — push to `main` creates (or reuses) member account A |
+| `EMAIL_B` | Unused email — same for member account B |
 
-Multi-account org (central billing + inference in A and B): see [org/README.md](org/README.md).
+Multi-account org (push creates A and B, then deploys the stack into each): see [org/README.md](org/README.md).
 
 The Lambda talks to Bedrock with its **execution role**, not with the deploy access keys. Bedrock is managed inference — you do not choose a GPU.
 
@@ -324,13 +324,9 @@ Or in the AWS Console: CloudFormation → stack `bedrock-inference-mvp` → **Ou
 ### Manual deploy
 
 ```bash
+export API_KEY='your-shared-secret'
 sam build
-sam deploy \
-  --region us-east-1 \
-  --parameter-overrides \
-    ModelId=amazon.nova-lite-v1:0 \
-    ApiKey='your-shared-secret' \
-    GuardrailId='your-guardrail-id'
+./scripts/sam-deploy.sh
 ```
 
 ## Call the API

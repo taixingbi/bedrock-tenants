@@ -1,9 +1,10 @@
+import hmac
 import json
 import os
 import time
 import uuid
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import boto3
 from botocore.exceptions import ClientError
@@ -13,8 +14,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 bedrock = boto3.client("bedrock-runtime")
 
 DEFAULT_MODEL_ID = os.environ.get("MODEL_ID", "amazon.nova-lite-v1:0")
-# Back-compat alias used in a few call sites / docs.
-MODEL_ID = DEFAULT_MODEL_ID
 API_KEY = os.environ.get("API_KEY", "")
 GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "").strip()
 GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "DRAFT").strip() or "DRAFT"
@@ -196,7 +195,6 @@ def _is_apply_guardrail(model_id: str) -> bool:
     return model_id == APPLY_GUARDRAIL_ID
 
 
-
 def _load_model_map() -> dict[str, str]:
     mapping = dict(_BUILTIN_MODEL_ALIASES)
     mapping[DEFAULT_MODEL_ID] = DEFAULT_MODEL_ID
@@ -217,8 +215,25 @@ def _load_model_map() -> dict[str, str]:
 
 
 MODEL_MAP = _load_model_map()
+_KNOWN_MODEL_NAMES = ", ".join(
+    sorted(
+        name
+        for name in MODEL_MAP
+        if not name.startswith(_RAW_MODEL_PREFIXES) and "/" not in name
+    )
+)
 
 app = FastAPI(title="mvp-bedrock")
+
+
+class _InferRequest(NamedTuple):
+    messages: list[dict[str, str]]
+    max_tokens: int
+    temperature: float | None
+    top_p: float | None
+    response_model: str
+    bedrock_model_id: str
+    stream: bool
 
 
 def _resolve_model(request_model: Any) -> tuple[str, str]:
@@ -240,22 +255,52 @@ def _resolve_model(request_model: Any) -> tuple[str, str]:
     if name.startswith(_RAW_MODEL_PREFIXES):
         return name, name
 
-    known = ", ".join(sorted(MODEL_MAP))
-    raise ValueError(f"unknown model '{name}'; known: {known}")
+    raise ValueError(f"unknown model '{name}'; known: {_KNOWN_MODEL_NAMES}")
+
+
+def _secret_equal(given: str, expected: str) -> bool:
+    given_b = given.encode("utf-8")
+    expected_b = expected.encode("utf-8")
+    if len(given_b) != len(expected_b):
+        hmac.compare_digest(expected_b, expected_b)
+        return False
+    return hmac.compare_digest(given_b, expected_b)
 
 
 def _authorized(x_api_key: str | None, authorization: str | None) -> bool:
     if not API_KEY:
         return False
-    if x_api_key == API_KEY:
+    if x_api_key is not None and _secret_equal(x_api_key, API_KEY):
         return True
     if authorization and authorization.lower().startswith("bearer "):
-        return authorization[7:].strip() == API_KEY
+        return _secret_equal(authorization[7:].strip(), API_KEY)
     return False
 
 
 def _unauthorized() -> JSONResponse:
     return JSONResponse(status_code=401, content={"error": "unauthorized"})
+
+
+def _reasoning_text(block: dict[str, Any]) -> str:
+    reasoning = block.get("reasoningContent") or {}
+    if not isinstance(reasoning, dict):
+        return ""
+    text = reasoning.get("text")
+    if isinstance(text, str) and text:
+        return text
+    nested = reasoning.get("reasoningText") or {}
+    if isinstance(nested, dict):
+        nested_text = nested.get("text")
+        if isinstance(nested_text, str) and nested_text:
+            return nested_text
+    return ""
+
+
+def _converse_delta_text(delta: dict[str, Any]) -> str:
+    text = delta.get("text")
+    if isinstance(text, str) and text:
+        return text
+    return _reasoning_text(delta)
 
 
 def _extract_converse_text(converse_response: dict[str, Any]) -> str:
@@ -269,13 +314,10 @@ def _extract_converse_text(converse_response: dict[str, Any]) -> str:
             continue
         # GPT-OSS / Safeguard may return only reasoningContent when max_tokens
         # is spent before the final text block.
-        reasoning = block.get("reasoningContent") or {}
-        reasoning_text = (reasoning.get("reasoningText") or {}).get("text")
-        if isinstance(reasoning_text, str) and reasoning_text:
-            reasoning_parts.append(reasoning_text)
-    if parts:
-        return "".join(parts)
-    return "".join(reasoning_parts)
+        reasoning = _reasoning_text(block)
+        if reasoning:
+            reasoning_parts.append(reasoning)
+    return "".join(parts) or "".join(reasoning_parts)
 
 
 def _extract_invoke_text(invoke_body: dict[str, Any]) -> str:
@@ -386,24 +428,22 @@ def _invoke_body(
     return body
 
 
+def _first_int(usage: dict[str, Any], keys: tuple[str, ...]) -> int:
+    for key in keys:
+        value = usage.get(key)
+        if value is not None:
+            return int(value)
+    return 0
+
+
 def _usage_from_keys(
     usage: dict[str, Any],
     prompt_keys: tuple[str, ...],
     completion_keys: tuple[str, ...],
 ) -> dict[str, int]:
-    prompt_tokens = 0
-    for key in prompt_keys:
-        if usage.get(key) is not None:
-            prompt_tokens = usage[key]
-            break
-    completion_tokens = 0
-    for key in completion_keys:
-        if usage.get(key) is not None:
-            completion_tokens = usage[key]
-            break
     return {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
+        "prompt_tokens": _first_int(usage, prompt_keys),
+        "completion_tokens": _first_int(usage, completion_keys),
     }
 
 
@@ -606,6 +646,21 @@ def _raise_stream_event_error(event: dict[str, Any]) -> None:
             raise RuntimeError(message)
 
 
+def _openai_sse_stream(
+    model: str, deltas: Iterator[tuple[str, str | None]]
+) -> Iterator[str]:
+    completion_id, created = _new_stream_ids()
+    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
+    finish_reason = "stop"
+    for text, chunk_finish in deltas:
+        if chunk_finish:
+            finish_reason = chunk_finish
+        if text:
+            yield _sse_chunk(completion_id, created, model, {"content": text})
+    yield _sse_chunk(completion_id, created, model, {}, finish_reason=finish_reason)
+    yield _sse("[DONE]")
+
+
 def _stream_invoke_model(
     messages: list[dict[str, str]],
     max_tokens: int,
@@ -624,27 +679,23 @@ def _stream_invoke_model(
         ),
     )
     event_stream = response.get("body")
-    completion_id, created = _new_stream_ids()
-    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
 
-    finish_reason: str | None = None
-    for event in event_stream:
-        chunk_event = event.get("chunk")
-        if not chunk_event:
-            _raise_stream_event_error(event)
-            continue
+    def deltas() -> Iterator[tuple[str, str | None]]:
+        finish_reason: str | None = None
+        for event in event_stream:
+            chunk_event = event.get("chunk")
+            if not chunk_event:
+                _raise_stream_event_error(event)
+                continue
+            payload = json.loads(chunk_event["bytes"])
+            text, chunk_finish = _extract_stream_delta_text(payload)
+            if chunk_finish:
+                finish_reason = chunk_finish
+            if text:
+                yield text, None
+        yield "", finish_reason or "stop"
 
-        payload = json.loads(chunk_event["bytes"])
-        text, chunk_finish = _extract_stream_delta_text(payload)
-        if chunk_finish:
-            finish_reason = chunk_finish
-        if text:
-            yield _sse_chunk(completion_id, created, model, {"content": text})
-
-    yield _sse_chunk(
-        completion_id, created, model, {}, finish_reason=finish_reason or "stop"
-    )
-    yield _sse("[DONE]")
+    yield from _openai_sse_stream(model, deltas())
 
 
 def _stream_converse(
@@ -658,23 +709,23 @@ def _stream_converse(
     response = bedrock.converse_stream(
         **_converse_args(messages, max_tokens, temperature, top_p, bedrock_model_id)
     )
-    event_stream = response.get("stream", [])
-    completion_id, created = _new_stream_ids()
-    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
+    event_stream = response.get("stream") or []
 
-    finish_reason = "stop"
-    for event in event_stream:
-        if "contentBlockDelta" in event:
-            delta = event["contentBlockDelta"].get("delta") or {}
-            text = delta.get("text")
-            if isinstance(text, str) and text:
-                yield _sse_chunk(completion_id, created, model, {"content": text})
-        elif "messageStop" in event:
-            stop_reason = event["messageStop"].get("stopReason")
-            finish_reason = "length" if stop_reason == "max_tokens" else "stop"
+    def deltas() -> Iterator[tuple[str, str | None]]:
+        finish_reason: str | None = None
+        for event in event_stream:
+            _raise_stream_event_error(event)
+            if "contentBlockDelta" in event:
+                delta = event["contentBlockDelta"].get("delta") or {}
+                text = _converse_delta_text(delta)
+                if text:
+                    yield text, None
+            elif "messageStop" in event:
+                stop_reason = event["messageStop"].get("stopReason")
+                finish_reason = "length" if stop_reason == "max_tokens" else "stop"
+        yield "", finish_reason or "stop"
 
-    yield _sse_chunk(completion_id, created, model, {}, finish_reason=finish_reason)
-    yield _sse("[DONE]")
+    yield from _openai_sse_stream(model, deltas())
 
 
 def _messages_to_guardrail_text(messages: list[dict[str, str]]) -> str:
@@ -728,12 +779,13 @@ def _stream_apply_guardrail(
 ) -> Iterator[str]:
     # Call ApplyGuardrail before emitting SSE so setup failures become HTTP 502.
     inferred = _infer_apply_guardrail(messages)
-    completion_id, created = _new_stream_ids()
-    yield _sse_chunk(completion_id, created, model, {"role": "assistant", "content": ""})
-    if inferred["text"]:
-        yield _sse_chunk(completion_id, created, model, {"content": inferred["text"]})
-    yield _sse_chunk(completion_id, created, model, {}, finish_reason="stop")
-    yield _sse("[DONE]")
+
+    def deltas() -> Iterator[tuple[str, str | None]]:
+        if inferred["text"]:
+            yield inferred["text"], None
+        yield "", "stop"
+
+    yield from _openai_sse_stream(model, deltas())
 
 
 def _run_inference(
@@ -788,10 +840,7 @@ async def _parse_infer_payload(
     request: Request,
     x_api_key: str | None,
     authorization: str | None,
-) -> (
-    tuple[list[dict[str, str]], int, float | None, float | None, str, str, dict[str, Any]]
-    | JSONResponse
-):
+) -> _InferRequest | JSONResponse:
     if not _authorized(x_api_key, authorization):
         return _unauthorized()
 
@@ -807,7 +856,49 @@ async def _parse_infer_payload(
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"error": str(exc)})
 
-    return messages, max_tokens, temperature, top_p, response_model, bedrock_model_id, payload
+    return _InferRequest(
+        messages,
+        max_tokens,
+        temperature,
+        top_p,
+        response_model,
+        bedrock_model_id,
+        bool(payload.get("stream")),
+    )
+
+
+def _as_sse(generator: Iterator[str]) -> StreamingResponse:
+    first = next(generator)
+
+    def event_stream() -> Iterator[str]:
+        yield first
+        try:
+            yield from generator
+        except Exception as exc:  # noqa: BLE001
+            yield _sse(json.dumps({"error": "bedrock request failed", "detail": str(exc)}))
+            yield _sse("[DONE]")
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _run_or_error(req: _InferRequest) -> dict[str, Any] | JSONResponse:
+    try:
+        return _run_inference(
+            req.messages,
+            req.max_tokens,
+            req.temperature,
+            req.top_p,
+            req.bedrock_model_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _bedrock_error(exc)
 
 
 @app.options("/{full_path:path}")
@@ -832,48 +923,28 @@ async def chat_completions(
     if isinstance(parsed, JSONResponse):
         return parsed
 
-    messages, max_tokens, temperature, top_p, response_model, bedrock_model_id, payload = (
-        parsed
-    )
-    stream = bool(payload.get("stream"))
-
-    if stream:
+    if parsed.stream:
         try:
-            # Force Bedrock stream open before returning so setup errors are JSON 502.
-            generator = _stream_inference(
-                messages,
-                max_tokens,
-                temperature,
-                top_p,
-                response_model,
-                bedrock_model_id,
+            return _as_sse(
+                _stream_inference(
+                    parsed.messages,
+                    parsed.max_tokens,
+                    parsed.temperature,
+                    parsed.top_p,
+                    parsed.response_model,
+                    parsed.bedrock_model_id,
+                )
             )
-            first = next(generator)
         except Exception as exc:  # noqa: BLE001
             return _bedrock_error(exc)
 
-        def event_stream() -> Iterator[str]:
-            yield first
-            yield from generator
-
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
-        )
-
-    try:
-        inferred = _run_inference(
-            messages, max_tokens, temperature, top_p, bedrock_model_id
-        )
-    except Exception as exc:  # noqa: BLE001
-        return _bedrock_error(exc)
-
+    inferred = _run_or_error(parsed)
+    if isinstance(inferred, JSONResponse):
+        return inferred
     return JSONResponse(
-        content=_openai_completion(response_model, inferred["text"], inferred["usage"])
+        content=_openai_completion(
+            parsed.response_model, inferred["text"], inferred["usage"]
+        )
     )
 
 
@@ -888,19 +959,11 @@ async def infer(
     if isinstance(parsed, JSONResponse):
         return parsed
 
-    messages, max_tokens, temperature, top_p, response_model, bedrock_model_id, _payload = (
-        parsed
-    )
-
-    try:
-        inferred = _run_inference(
-            messages, max_tokens, temperature, top_p, bedrock_model_id
-        )
-    except Exception as exc:  # noqa: BLE001
-        return _bedrock_error(exc)
-
+    inferred = _run_or_error(parsed)
+    if isinstance(inferred, JSONResponse):
+        return inferred
     return JSONResponse(
         content=_legacy_infer_response(
-            response_model, inferred["text"], inferred["usage"]
+            parsed.response_model, inferred["text"], inferred["usage"]
         )
     )

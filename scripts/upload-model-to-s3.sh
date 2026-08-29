@@ -26,15 +26,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Catalog: key1|key2|...|display|provider|name|id|aliases|profiles
 # profiles: none | us | us+global  (last 6 fields are fixed; earlier fields are lookup keys)
 MARKETPLACE_MODELS=(
+  'nova-lite|nova-lite-v1|Amazon Nova Lite|amazon|nova-lite-v1|amazon.nova-lite-v1:0|nova-lite, amazon.nova-lite-v1:0|none'
   'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
   'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
   'llama3.2-1b|llama-3.2-1b|Meta Llama 3.2 1B Instruct|meta|llama3-2-1b-instruct|meta.llama3-2-1b-instruct-v1:0|llama3.2-1b, llama-3.2-1b, us.meta.llama3-2-1b-instruct-v1:0|us'
   'guardrail|apply-guardrail|Amazon Bedrock ApplyGuardrail|amazon|apply-guardrail|apply-guardrail|guardrail, apply-guardrail|none'
   'llama4|llama4-maverick|llama-4-maverick|Meta Llama 4 Maverick 17B Instruct|meta|llama4-maverick-17b-instruct|meta.llama4-maverick-17b-instruct-v1:0|llama4, llama4-maverick, llama-4-maverick, us.meta.llama4-maverick-17b-instruct-v1:0|us'
+  'llama4-scout|llama-4-scout|Meta Llama 4 Scout 17B Instruct|meta|llama4-scout-17b-instruct|meta.llama4-scout-17b-instruct-v1:0|llama4-scout, llama-4-scout, us.meta.llama4-scout-17b-instruct-v1:0|us'
   'gpt-oss|gpt-oss-120b|OpenAI GPT-OSS 120B|openai|gpt-oss-120b|openai.gpt-oss-120b-1:0|gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0|none'
+  'gpt-oss-20b|OpenAI GPT-OSS 20B|openai|gpt-oss-20b|openai.gpt-oss-20b-1:0|gpt-oss-20b, openai.gpt-oss-20b-1:0|none'
   'gpt-oss-safeguard-20b|OpenAI GPT-OSS Safeguard 20B|openai|gpt-oss-safeguard-20b|openai.gpt-oss-safeguard-20b|gpt-oss-safeguard-20b, openai.gpt-oss-safeguard-20b|none'
   'gpt-oss-safeguard|gpt-oss-safeguard-120b|OpenAI GPT-OSS Safeguard 120B|openai|gpt-oss-safeguard-120b|openai.gpt-oss-safeguard-120b|gpt-oss-safeguard, gpt-oss-safeguard-120b, openai.gpt-oss-safeguard-120b|none'
   'deepseek|deepseek-v3.2|DeepSeek V3.2|deepseek|deepseek-v3.2|deepseek.v3.2|deepseek, deepseek-v3.2, deepseek.v3.2|none'
+  'deepseek-r1|DeepSeek R1|deepseek|deepseek-r1-v1|deepseek.r1-v1:0|deepseek-r1, us.deepseek.r1-v1:0|us'
   'qwen3-next-80b-a3b|Qwen3 Next 80B A3B|qwen|qwen3-next-80b-a3b|qwen.qwen3-next-80b-a3b|qwen3-next-80b-a3b, qwen.qwen3-next-80b-a3b|none'
   'ministral-3b|ministral-3-3b|Ministral 3 3B|mistral|ministral-3-3b-instruct|mistral.ministral-3-3b-instruct|ministral-3b, ministral-3-3b, mistral.ministral-3-3b-instruct|none'
   'ministral-8b|ministral-3-8b|Ministral 3 8B|mistral|ministral-3-8b-instruct|mistral.ministral-3-8b-instruct|ministral-8b, ministral-3-8b, mistral.ministral-3-8b-instruct|none'
@@ -50,8 +54,9 @@ usage() {
 Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
-  nova-pro / llama / llama3.2-1b / llama4 / llama4-maverick / apply-guardrail / guardrail
-  gpt-oss / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek
+  nova-lite / nova-pro / llama / llama3.2-1b / llama4 / llama4-maverick / llama4-scout
+  apply-guardrail / guardrail
+  gpt-oss / gpt-oss-20b / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek / deepseek-r1
   qwen3-next-80b-a3b / qwen3-32b
   ministral-3b / ministral-8b / ministral-14b
   gemma-3-4b / gemma-3-12b / gemma-3-27b

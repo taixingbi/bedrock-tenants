@@ -1,0 +1,73 @@
+name: SAM deploy
+description: Build and deploy the Bedrock inference stack
+inputs:
+  aws-access-key-id:
+    required: true
+  aws-secret-access-key:
+    required: true
+  role-to-assume:
+    required: false
+    default: ""
+  role-session-name:
+    required: false
+    default: gha-deploy
+runs:
+  using: composite
+  steps:
+    - name: Check required secrets
+      shell: bash
+      env:
+        INPUT_ACCESS_KEY: ${{ inputs.aws-access-key-id }}
+        INPUT_SECRET_KEY: ${{ inputs.aws-secret-access-key }}
+      run: |
+        missing=0
+        if [ -z "$INPUT_ACCESS_KEY" ]; then
+          echo "::error::Missing repository secret AWS_ACCESS_KEY_ID"
+          missing=1
+        fi
+        if [ -z "$INPUT_SECRET_KEY" ]; then
+          echo "::error::Missing repository secret AWS_SECRET_ACCESS_KEY"
+          missing=1
+        fi
+        if [ -z "$API_KEY" ]; then
+          echo "::error::Missing repository secret INFERENCE_API_KEY"
+          missing=1
+        fi
+        exit "$missing"
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: Install SAM CLI
+      uses: aws-actions/setup-sam@v2
+      with:
+        use-installer: true
+
+    - name: Configure AWS credentials
+      if: ${{ inputs.role-to-assume == '' }}
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Configure AWS credentials (member)
+      if: ${{ inputs.role-to-assume != '' }}
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ${{ inputs.role-to-assume }}
+        role-session-name: ${{ inputs.role-session-name }}
+        role-skip-session-tagging: true
+
+    - name: Build
+      shell: bash
+      run: sam build
+
+    - name: Deploy
+      shell: bash
+      run: ./scripts/sam-deploy.sh
