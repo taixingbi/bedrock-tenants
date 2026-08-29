@@ -349,7 +349,7 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
   }'
 ```
 
-See `example.md` (`bash example.md`) for a full sync+stream smoke test of all marketplace aliases.
+See [`scripts/smoke.sh`](scripts/smoke.sh) (`ACCOUNT=a ./scripts/smoke.sh ministral-8b`) for a sync+stream smoke test.
 
 Amazon Nova Pro (marketplace):
 

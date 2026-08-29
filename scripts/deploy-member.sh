@@ -51,4 +51,4 @@ echo "Account ${ACCOUNT_ID} Function URL:"
 echo "  ${FUNCTION_URL}"
 echo
 echo "Enable Bedrock model access in this account, then:"
-echo "  FUNCTION_URL=${FUNCTION_URL} bash example.md"
+echo "  FUNCTION_URL=${FUNCTION_URL} ./scripts/smoke.sh"

@@ -57,8 +57,8 @@ Each member gets its own Function URL. Bedrock **model access is per account** â
 
 ```bash
 export INFERENCE_API_KEY='1234'
-FUNCTION_URL='https://...account-a.../' bash example.md
-FUNCTION_URL='https://...account-b.../' bash example.md
+ACCOUNT=a ./scripts/smoke.sh
+ACCOUNT=b ./scripts/smoke.sh
 ```
 
 To print a member URL after deploy:
