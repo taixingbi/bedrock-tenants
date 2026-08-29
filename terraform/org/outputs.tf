@@ -17,3 +17,11 @@ output "account_a_id" {
 output "account_b_id" {
   value = aws_organizations_account.b.id
 }
+
+output "account_c_id" {
+  value = aws_organizations_account.c.id
+}
+
+output "account_d_id" {
+  value = aws_organizations_account.d.id
+}

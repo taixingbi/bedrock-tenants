@@ -23,7 +23,7 @@ resource "aws_organizations_account" "a" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [name, role_name, iam_user_access_to_billing]
+    ignore_changes  = [role_name, iam_user_access_to_billing]
   }
 }
 
@@ -37,6 +37,34 @@ resource "aws_organizations_account" "b" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [name, role_name, iam_user_access_to_billing]
+    ignore_changes  = [role_name, iam_user_access_to_billing]
+  }
+}
+
+resource "aws_organizations_account" "c" {
+  name                       = var.account_c_name
+  email                      = var.email_c
+  role_name                  = var.role_name
+  parent_id                  = aws_organizations_organizational_unit.inference.id
+  close_on_deletion          = false
+  iam_user_access_to_billing = "ALLOW"
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [role_name, iam_user_access_to_billing]
+  }
+}
+
+resource "aws_organizations_account" "d" {
+  name                       = var.account_d_name
+  email                      = var.email_d
+  role_name                  = var.role_name
+  parent_id                  = aws_organizations_organizational_unit.inference.id
+  close_on_deletion          = false
+  iam_user_access_to_billing = "ALLOW"
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [role_name, iam_user_access_to_billing]
   }
 }

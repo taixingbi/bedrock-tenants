@@ -81,12 +81,14 @@ aws iam put-role-policy \
       "Action": [
         "organizations:CreateOrganization",
         "organizations:CreateOrganizationalUnit",
+        "organizations:UpdateOrganizationalUnit",
         "organizations:CreateAccount",
         "organizations:MoveAccount",
         "organizations:Describe*",
         "organizations:List*",
         "organizations:TagResource",
-        "organizations:UntagResource"
+        "organizations:UntagResource",
+        "account:PutAccountName"
       ],
       "Resource": "*"
     },

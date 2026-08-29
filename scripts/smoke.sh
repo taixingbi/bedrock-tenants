@@ -4,10 +4,11 @@
 #   ./scripts/smoke.sh
 #   ./scripts/smoke.sh ministral-8b llama4
 #   ACCOUNT=a ./scripts/smoke.sh ministral-8b
+#   ACCOUNT=c ./scripts/smoke.sh
 #   FUNCTION_URL='https://..../' ./scripts/smoke.sh ministral-8b
 #
-# ACCOUNT=a|b assumes OrganizationAccountAccessRole in a subshell to read
-# the Function URL. Curl does not need AWS creds.
+# ACCOUNT=a|b|c|d (bedrock-tenant-*) assumes OrganizationAccountAccessRole
+# in a subshell to read the Function URL. Curl does not need AWS creds.
 set -euo pipefail
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -36,15 +37,23 @@ member_url() {
   local want="$1" name email id
   case "${want}" in
     a|A)
-      name="mvp-bedrock-a"
+      name="bedrock-tenant-a"
       email="tb_bedrock_a@gmail.com"
       ;;
     b|B)
-      name="mvp-bedrock-b"
+      name="bedrock-tenant-b"
       email="tb_bedrock_b@gmail.com"
       ;;
+    c|C)
+      name="bedrock-tenant-c"
+      email="tb_bedrock_c@gmail.com"
+      ;;
+    d|D)
+      name="bedrock-tenant-d"
+      email="tb_bedrock_d@gmail.com"
+      ;;
     *)
-      die "ACCOUNT must be a or b"
+      die "ACCOUNT must be a, b, c, or d"
       ;;
   esac
   command -v aws >/dev/null || die "aws CLI required for ACCOUNT=${want}"
@@ -60,11 +69,13 @@ member_url() {
     | {
         read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
         export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-        aws lambda get-function-url-config \
+        if ! aws lambda get-function-url-config \
           --region us-east-1 \
           --function-name bedrock-inference-mvp \
           --query FunctionUrl \
-          --output text
+          --output text 2>/dev/null; then
+          die "Lambda bedrock-inference-mvp is not deployed in ${name} (${id}). Run: ./scripts/deploy-member.sh ${id}"
+        fi
       }
 }
 
@@ -76,7 +87,7 @@ elif [[ -n "${ACCOUNT:-}" ]]; then
   fi
   FUNCTION_URL="$(member_url "${ACCOUNT}")"
 else
-  command -v aws >/dev/null || die "set FUNCTION_URL or ACCOUNT=a|b"
+  command -v aws >/dev/null || die "set FUNCTION_URL or ACCOUNT=a|b|c|d"
   FUNCTION_URL="$(aws lambda get-function-url-config \
     --region us-east-1 \
     --function-name bedrock-inference-mvp \
@@ -121,8 +132,8 @@ chat() {
   echo "HTTP ${code}"
   if [[ "${stream}" == "true" ]]; then
     cat "${tmp}"
-  elif jq -e . >/dev/null 2>&1 <"${tmp}"; then
-    jq '{error, detail, message: .Message, model, answer: .choices[0].message.content, usage}' "${tmp}"
+  elif jq -e 'type == "object" and (.choices[0].message.content != null or .error != null or .errorType != null)' >/dev/null 2>&1 <"${tmp}"; then
+    jq '{error, errorType, detail: (.detail // .errorMessage), message: .Message, model, answer: .choices[0].message.content, usage}' "${tmp}"
   else
     cat "${tmp}"
   fi

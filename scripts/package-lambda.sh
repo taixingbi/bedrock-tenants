@@ -10,7 +10,15 @@ trap cleanup EXIT
 
 cp "${ROOT}/src/app.py" "${ROOT}/src/requirements.txt" "${ROOT}/src/run.sh" "${STAGE}/"
 chmod +x "${STAGE}/run.sh"
-python3 -m pip install -r "${ROOT}/src/requirements.txt" -t "${STAGE}" -q
+# Lambda is python3.12 x86_64. A host pip install on macOS ARM pulls the wrong
+# pydantic-core wheel and the function exits with Runtime.ExitError.
+python3 -m pip install -q \
+  --platform manylinux2014_x86_64 \
+  --implementation cp \
+  --python-version 3.12 \
+  --only-binary=:all: \
+  -r "${ROOT}/src/requirements.txt" \
+  -t "${STAGE}"
 find "${STAGE}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 python3 - "${STAGE}" "${DEST}" <<'PY'

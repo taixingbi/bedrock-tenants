@@ -38,6 +38,8 @@ jobs:
     outputs:
       account_a_id: ${{ steps.org.outputs.ACCOUNT_A_ID }}
       account_b_id: ${{ steps.org.outputs.ACCOUNT_B_ID }}
+      account_c_id: ${{ steps.org.outputs.ACCOUNT_C_ID }}
+      account_d_id: ${{ steps.org.outputs.ACCOUNT_D_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -61,7 +63,7 @@ jobs:
           role-session-name: gha-bootstrap
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Create or reuse accounts A and B
+      - name: Create or reuse accounts A–D
         id: org
         run: ./scripts/bootstrap-org.sh
 
@@ -77,6 +79,10 @@ jobs:
             id: ${{ needs.bootstrap.outputs.account_a_id }}
           - account: b
             id: ${{ needs.bootstrap.outputs.account_b_id }}
+          - account: c
+            id: ${{ needs.bootstrap.outputs.account_c_id }}
+          - account: d
+            id: ${{ needs.bootstrap.outputs.account_d_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5

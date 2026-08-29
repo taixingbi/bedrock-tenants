@@ -24,7 +24,7 @@ Optional repository variables:
 | `GUARDRAIL_ID` | Bedrock Guardrail ID for `apply-guardrail` |
 | `GUARDRAIL_VERSION` | Guardrail version (defaults to `DRAFT`) |
 
-Multi-account org (Terraform emails in `terraform/org/variables.tf`; push creates A and B): see [org/README.md](org/README.md).
+Multi-account org (Terraform emails in `terraform/org/variables.tf`; push creates A–D): see [org/README.md](org/README.md).
 
 The Lambda talks to Bedrock with its **execution role**, not with the GitHub deploy role. Bedrock is managed inference — you do not choose a GPU.
 
@@ -349,7 +349,7 @@ curl -sS -N -X POST "${FUNCTION_URL}v1/chat/completions" \
   }'
 ```
 
-See [`scripts/smoke.sh`](scripts/smoke.sh) (`ACCOUNT=a ./scripts/smoke.sh ministral-8b`) for a sync+stream smoke test.
+See [`scripts/smoke.sh`](scripts/smoke.sh) (`ACCOUNT=a|b|c|d ./scripts/smoke.sh ministral-8b`) for a sync+stream smoke test of tenants in OU `bedrock-inference-dev`.
 
 Amazon Nova Pro (marketplace):
 

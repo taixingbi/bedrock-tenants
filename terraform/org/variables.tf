@@ -15,19 +15,41 @@ variable "email_b" {
   default     = "tb_bedrock_b@gmail.com"
 }
 
+variable "email_c" {
+  type        = string
+  description = "Unused email for member account C (AWS root). Do not change after create."
+  default     = "tb_bedrock_c@gmail.com"
+}
+
+variable "email_d" {
+  type        = string
+  description = "Unused email for member account D (AWS root). Do not change after create."
+  default     = "tb_bedrock_d@gmail.com"
+}
+
 variable "account_a_name" {
   type    = string
-  default = "tb_bedrock_a"
+  default = "bedrock-tenant-a"
 }
 
 variable "account_b_name" {
   type    = string
-  default = "tb_bedrock_b"
+  default = "bedrock-tenant-b"
+}
+
+variable "account_c_name" {
+  type    = string
+  default = "bedrock-tenant-c"
+}
+
+variable "account_d_name" {
+  type    = string
+  default = "bedrock-tenant-d"
 }
 
 variable "ou_name" {
   type    = string
-  default = "inference"
+  default = "bedrock-inference-dev"
 }
 
 variable "role_name" {
