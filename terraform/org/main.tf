@@ -23,7 +23,7 @@ resource "aws_organizations_account" "a" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [role_name, iam_user_access_to_billing]
+    ignore_changes  = [name, role_name, iam_user_access_to_billing]
   }
 }
 
@@ -37,6 +37,6 @@ resource "aws_organizations_account" "b" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [role_name, iam_user_access_to_billing]
+    ignore_changes  = [name, role_name, iam_user_access_to_billing]
   }
 }
