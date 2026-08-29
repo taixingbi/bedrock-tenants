@@ -44,7 +44,12 @@ TRUST="$(cat <<EOF
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": { "${OIDC_HOST}:aud": "sts.amazonaws.com" },
-        "StringLike": { "${OIDC_HOST}:sub": "repo:${REPO}:*" }
+        "StringLike": {
+          "${OIDC_HOST}:sub": [
+            "repo:${REPO}:*",
+            "repo:${REPO%%/*}@*/${REPO#*/}@*:*"
+          ]
+        }
       }
     }
   ]
@@ -75,15 +80,13 @@ aws iam put-role-policy \
       "Effect": "Allow",
       "Action": [
         "organizations:CreateOrganization",
-        "organizations:DescribeOrganization",
-        "organizations:ListRoots",
-        "organizations:ListAccounts",
-        "organizations:ListOrganizationalUnitsForParent",
         "organizations:CreateOrganizationalUnit",
         "organizations:CreateAccount",
-        "organizations:DescribeCreateAccountStatus",
-        "organizations:ListParents",
-        "organizations:MoveAccount"
+        "organizations:MoveAccount",
+        "organizations:Describe*",
+        "organizations:List*",
+        "organizations:TagResource",
+        "organizations:UntagResource"
       ],
       "Resource": "*"
     },

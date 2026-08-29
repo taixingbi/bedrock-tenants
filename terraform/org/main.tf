@@ -3,6 +3,8 @@ resource "aws_organizations_organization" "this" {
 
   lifecycle {
     prevent_destroy = true
+    # Pre-existing org (SCP, trusted access). Do not strip those on apply.
+    ignore_changes = [enabled_policy_types, aws_service_access_principals]
   }
 }
 
