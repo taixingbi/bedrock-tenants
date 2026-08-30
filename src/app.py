@@ -15,11 +15,9 @@ bedrock = boto3.client("bedrock-runtime")
 
 DEFAULT_MODEL_ID = os.environ.get("MODEL_ID", "amazon.nova-lite-v1:0")
 API_KEY = os.environ.get("API_KEY", "")
-GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "").strip()
-GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "DRAFT").strip() or "DRAFT"
 
-# Sentinel backend ID for Amazon Bedrock ApplyGuardrail (not a foundation model).
-APPLY_GUARDRAIL_ID = "apply-guardrail"
+# In-process MiniLM-L12-H384 classifier (not a Bedrock FM).
+MINILM_ID = "minilm-l12-h384"
 
 _RAW_MODEL_PREFIXES = (
     "arn:aws:bedrock:",
@@ -69,11 +67,6 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
     **_alias_entries(
         "meta.llama3-3-70b-instruct-v1:0",
         to="meta.llama3-3-70b-instruct-v1:0",
-    ),
-    **_alias_entries(
-        "guardrail",
-        "apply-guardrail",
-        to=APPLY_GUARDRAIL_ID,
     ),
     **_alias_entries(
         "llama4",
@@ -176,6 +169,13 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
         "Qwen/Qwen3-32B",
         to="qwen.qwen3-32b-v1:0",
     ),
+    # MiniLM-L12-H384 (in-process BERT classifier).
+    **_alias_entries(
+        "minilm-l12-h384",
+        "MiniLM-L12-H384",
+        "microsoft/MiniLM-L12-H384-uncased",
+        to=MINILM_ID,
+    ),
 }
 
 
@@ -183,8 +183,8 @@ def _is_imported_model(model_id: str) -> bool:
     return ":imported-model/" in model_id
 
 
-def _is_apply_guardrail(model_id: str) -> bool:
-    return model_id == APPLY_GUARDRAIL_ID
+def _is_minilm(model_id: str) -> bool:
+    return model_id == MINILM_ID
 
 
 def _load_model_map() -> dict[str, str]:
@@ -238,10 +238,6 @@ def _resolve_model(request_model: Any) -> tuple[str, str]:
     name = request_model.strip()
     if name in MODEL_MAP:
         bedrock_model_id = MODEL_MAP[name]
-        if _is_apply_guardrail(bedrock_model_id) and not GUARDRAIL_ID:
-            raise ValueError(
-                "apply-guardrail requires GUARDRAIL_ID (SAM GuardrailId / repo variable)"
-            )
         return name, bedrock_model_id
 
     if name.startswith(_RAW_MODEL_PREFIXES):
@@ -720,57 +716,25 @@ def _stream_converse(
     yield from _openai_sse_stream(model, deltas())
 
 
-def _messages_to_guardrail_text(messages: list[dict[str, str]]) -> str:
+def _messages_to_text(messages: list[dict[str, str]]) -> str:
     return "\n\n".join(m["content"] for m in messages if m.get("content"))
 
 
-def _extract_guardrail_text(result: dict[str, Any]) -> str:
-    outputs = result.get("outputs") or result.get("output") or []
-    parts: list[str] = []
-    if isinstance(outputs, list):
-        for item in outputs:
-            if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"]:
-                parts.append(item["text"])
-    if parts:
-        return "".join(parts)
-    return json.dumps(
-        {
-            "action": result.get("action", "NONE"),
-            "assessments": result.get("assessments") or [],
-        }
-    )
+def _infer_minilm(messages: list[dict[str, str]]) -> dict[str, Any]:
+    from minilm import classify
 
-
-def _guardrail_usage(result: dict[str, Any]) -> dict[str, int]:
-    usage = result.get("usage") or {}
-    units = 0
-    for value in usage.values():
-        if isinstance(value, int):
-            units += value
-    return {"prompt_tokens": units, "completion_tokens": 0}
-
-
-def _infer_apply_guardrail(messages: list[dict[str, str]]) -> dict[str, Any]:
-    text = _messages_to_guardrail_text(messages)
-    result = bedrock.apply_guardrail(
-        guardrailIdentifier=GUARDRAIL_ID,
-        guardrailVersion=GUARDRAIL_VERSION,
-        source="INPUT",
-        content=[{"text": {"text": text}}],
-        outputScope="FULL",
-    )
+    result = classify(_messages_to_text(messages))
     return {
-        "text": _extract_guardrail_text(result),
-        "usage": _guardrail_usage(result),
+        "text": json.dumps(result, ensure_ascii=False),
+        "usage": {
+            "prompt_tokens": int(result.get("tokens", 0) or 0),
+            "completion_tokens": 0,
+        },
     }
 
 
-def _stream_apply_guardrail(
-    messages: list[dict[str, str]],
-    model: str,
-) -> Iterator[str]:
-    # Call ApplyGuardrail before emitting SSE so setup failures become HTTP 502.
-    inferred = _infer_apply_guardrail(messages)
+def _stream_minilm(messages: list[dict[str, str]], model: str) -> Iterator[str]:
+    inferred = _infer_minilm(messages)
 
     def deltas() -> Iterator[tuple[str, str | None]]:
         if inferred["text"]:
@@ -787,8 +751,8 @@ def _run_inference(
     top_p: float | None,
     bedrock_model_id: str,
 ) -> dict[str, Any]:
-    if _is_apply_guardrail(bedrock_model_id):
-        return _infer_apply_guardrail(messages)
+    if _is_minilm(bedrock_model_id):
+        return _infer_minilm(messages)
     if _is_imported_model(bedrock_model_id):
         return _infer_invoke_model(
             messages, max_tokens, temperature, top_p, bedrock_model_id
@@ -806,8 +770,8 @@ def _stream_inference(
     model: str,
     bedrock_model_id: str,
 ) -> Iterator[str]:
-    if _is_apply_guardrail(bedrock_model_id):
-        return _stream_apply_guardrail(messages, model)
+    if _is_minilm(bedrock_model_id):
+        return _stream_minilm(messages, model)
     if _is_imported_model(bedrock_model_id):
         return _stream_invoke_model(
             messages, max_tokens, temperature, top_p, model, bedrock_model_id

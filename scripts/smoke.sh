@@ -20,7 +20,7 @@ MODELS=(
   llama
   llama4
   llama4-maverick
-  apply-guardrail
+  minilm-l12-h384
   gpt-oss
   gpt-oss-safeguard-20b
   gpt-oss-safeguard-120b

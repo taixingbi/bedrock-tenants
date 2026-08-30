@@ -10,8 +10,7 @@
 #   ./scripts/upload-model-to-s3.sh ministral-3b
 #   ./scripts/upload-model-to-s3.sh gemma-3-4b
 #   ./scripts/upload-model-to-s3.sh qwen3-32b
-#   ./scripts/upload-model-to-s3.sh qwen
-#   ./scripts/upload-model-to-s3.sh qwen --local ./Qwen2.5-7B-Instruct
+#   ./scripts/upload-model-to-s3.sh MiniLM-L12-H384
 #
 # Env overrides:
 #   BUCKET      default s3://bedrock-models-646821141010
@@ -29,7 +28,6 @@ MARKETPLACE_MODELS=(
   'nova-lite|nova-lite-v1|Amazon Nova Lite|amazon|nova-lite-v1|amazon.nova-lite-v1:0|nova-lite, amazon.nova-lite-v1:0|none'
   'nova-pro|nova-pro-v1|Amazon Nova Pro|amazon|nova-pro-v1|amazon.nova-pro-v1:0|nova-pro, amazon.nova-pro-v1:0|us'
   'llama|llama3.3|llama-3.3-70b|Meta Llama 3.3 70B Instruct|meta|llama3-3-70b-instruct|meta.llama3-3-70b-instruct-v1:0|llama, llama3.3, llama-3.3-70b, us.meta.llama3-3-70b-instruct-v1:0|us'
-  'guardrail|apply-guardrail|Amazon Bedrock ApplyGuardrail|amazon|apply-guardrail|apply-guardrail|guardrail, apply-guardrail|none'
   'llama4|llama4-maverick|llama-4-maverick|Meta Llama 4 Maverick 17B Instruct|meta|llama4-maverick-17b-instruct|meta.llama4-maverick-17b-instruct-v1:0|llama4, llama4-maverick, llama-4-maverick, us.meta.llama4-maverick-17b-instruct-v1:0|us'
   'llama4-scout|llama-4-scout|Meta Llama 4 Scout 17B Instruct|meta|llama4-scout-17b-instruct|meta.llama4-scout-17b-instruct-v1:0|llama4-scout, llama-4-scout, us.meta.llama4-scout-17b-instruct-v1:0|us'
   'gpt-oss|gpt-oss-120b|OpenAI GPT-OSS 120B|openai|gpt-oss-120b|openai.gpt-oss-120b-1:0|gpt-oss, gpt-oss-120b, openai.gpt-oss-120b-1:0|none'
@@ -54,15 +52,12 @@ Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
   nova-lite / nova-pro / llama / llama4 / llama4-maverick / llama4-scout
-  apply-guardrail / guardrail
   gpt-oss / gpt-oss-20b / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek / deepseek-r1
   qwen3-next-80b-a3b / qwen3-32b
   ministral-3b / ministral-8b / ministral-14b
   gemma-3-4b / gemma-3-12b / gemma-3-27b
-  qwen            Download Qwen2.5-7B-Instruct (unless --local) and s3 sync
-
-Options (qwen):
-  --local DIR     Sync existing local weights instead of hf download
+  minilm-l12-h384 / MiniLM-L12-H384
+                  Sync models/MiniLM-L12-H384 weights (in-Lambda classifier)
 
 Env:
   BUCKET, AWS_REGION, MODEL_ID, MODEL_NAME, US_PROFILE, GLOBAL_PROFILE
@@ -201,35 +196,15 @@ lookup_marketplace() {
   return 1
 }
 
-upload_qwen() {
+upload_minilm() {
   require_aws
 
-  local local_dir=""
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --local)
-        [[ $# -ge 2 ]] || die "--local requires a directory"
-        local_dir="$2"
-        shift 2
-        ;;
-      *)
-        die "unknown option for qwen: $1"
-        ;;
-    esac
-  done
-
-  local hf_repo="Qwen/Qwen2.5-7B-Instruct"
-  local prefix="qwen/Qwen2.5-7B-Instruct"
+  local local_dir="${ROOT}/models/MiniLM-L12-H384"
+  local prefix="microsoft/MiniLM-L12-H384"
   local dest="${BUCKET}/${prefix}/"
 
-  if [[ -z "${local_dir}" ]]; then
-    local_dir="${ROOT}/Qwen2.5-7B-Instruct"
-    command -v hf >/dev/null || die "hf CLI required (pip install huggingface_hub), or pass --local DIR"
-    echo "Downloading ${hf_repo} → ${local_dir}"
-    hf download "${hf_repo}" --local-dir "${local_dir}"
-  fi
-
   [[ -f "${local_dir}/config.json" ]] || die "missing ${local_dir}/config.json"
+  [[ -f "${local_dir}/model.safetensors" ]] || die "missing ${local_dir}/model.safetensors"
 
   echo "Syncing ${local_dir} → ${dest}"
   aws s3 sync "${local_dir}" "${dest}" \
@@ -238,7 +213,7 @@ upload_qwen() {
 
   echo
   echo "Done. Weights at ${dest}"
-  echo "Create a Custom Model Import job pointing at that s3Uri (see README)."
+  echo "The Lambda loads MiniLM in-process; S3 is only a package/CI fallback."
 }
 
 MODEL="${1:-}"
@@ -249,8 +224,8 @@ case "${MODEL}" in
   -h|--help|help)
     usage
     ;;
-  qwen|Qwen2.5-7B-Instruct|qwen2.5-7b-instruct)
-    upload_qwen "$@"
+  minilm-l12-h384|MiniLM-L12-H384|microsoft/MiniLM-L12-H384-uncased)
+    upload_minilm
     ;;
   *)
     if ! lookup_marketplace "${MODEL}"; then

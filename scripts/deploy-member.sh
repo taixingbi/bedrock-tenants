@@ -8,7 +8,7 @@
 #   API_KEY or INFERENCE_API_KEY  required
 #   ORG_ACCESS_ROLE  default OrganizationAccountAccessRole
 #   AWS_REGION       default us-east-1
-#   MODEL_ID, MODEL_MAP, GUARDRAIL_ID, GUARDRAIL_VERSION
+#   MODEL_ID, MODEL_MAP
 set -euo pipefail
 
 ACCOUNT_ID="${1:-}"

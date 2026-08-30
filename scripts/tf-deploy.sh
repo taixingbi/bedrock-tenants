@@ -2,9 +2,8 @@
 # Package the Lambda and terraform apply (replaces sam deploy).
 # Requires AWS credentials for the target account.
 #
-# Env: API_KEY or INFERENCE_API_KEY (required), MODEL_ID, MODEL_MAP, GUARDRAIL_ID,
-#      GUARDRAIL_VERSION, AWS_REGION (default us-east-1),
-#      FUNCTION_NAME (default bedrock-inference-mvp)
+# Env: API_KEY or INFERENCE_API_KEY (required), MODEL_ID, MODEL_MAP,
+#      AWS_REGION (default us-east-1), FUNCTION_NAME (default bedrock-inference-mvp)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,8 +61,8 @@ export TF_VAR_lambda_zip="${ZIP}"
 export TF_VAR_model_id="${MODEL_ID}"
 export TF_VAR_model_map="${MODEL_MAP:-}"
 export TF_VAR_api_key="${API_KEY}"
-export TF_VAR_guardrail_id="${GUARDRAIL_ID:-}"
-export TF_VAR_guardrail_version="${GUARDRAIL_VERSION:-DRAFT}"
+export TF_VAR_lambda_s3_bucket="${BUCKET}"
+export TF_VAR_lambda_s3_key="${FUNCTION_NAME}/lambda.zip"
 
 terraform apply -input=false -auto-approve
 

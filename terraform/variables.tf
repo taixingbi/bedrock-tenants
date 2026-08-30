@@ -28,12 +28,13 @@ variable "api_key" {
   sensitive = true
 }
 
-variable "guardrail_id" {
-  type    = string
-  default = ""
+variable "lambda_s3_bucket" {
+  type        = string
+  default     = ""
+  description = "If set, upload the Lambda zip via this bucket (needed when the zip exceeds 50MB)."
 }
 
-variable "guardrail_version" {
+variable "lambda_s3_key" {
   type    = string
-  default = "DRAFT"
+  default = "lambda.zip"
 }

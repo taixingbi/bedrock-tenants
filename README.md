@@ -5,7 +5,7 @@ Python Lambda with a Function URL that sends prompts to Amazon Bedrock via the b
 ## Prerequisites
 
 1. AWS account with permission to create Lambda, IAM roles, and call Bedrock
-2. [Model access enabled](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) for marketplace models (default: `amazon.nova-lite-v1:0`), **or** a successfully [imported custom model](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html)
+2. [Model access enabled](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) for marketplace models (default: `amazon.nova-lite-v1:0`)
 3. [Terraform](https://developer.hashicorp.com/terraform/install) (>= 1.5) and Python 3.12 for local package/deploy
 4. GitHub Actions OIDC (no long-lived AWS keys). From the management account run `./scripts/setup-gha-oidc-role.sh`, then add:
 
@@ -19,10 +19,8 @@ Optional repository variables:
 | Variable | Purpose |
 | --- | --- |
 | `AWS_REGION` | Region for deploy and Bedrock (defaults to `us-east-1`) |
-| `MODEL_ID` | Default Bedrock model ID or **imported model ARN** when the request omits `model` (defaults to `amazon.nova-lite-v1:0`) |
+| `MODEL_ID` | Default Bedrock model ID when the request omits `model` (defaults to `amazon.nova-lite-v1:0`) |
 | `MODEL_MAP` | Optional JSON object of request alias → Bedrock ID/ARN (merges with built-in aliases) |
-| `GUARDRAIL_ID` | Bedrock Guardrail ID for `apply-guardrail` |
-| `GUARDRAIL_VERSION` | Guardrail version (defaults to `DRAFT`) |
 
 Multi-account org (Terraform emails in `terraform/org/variables.tf`; push creates A–D): see [org/README.md](org/README.md).
 
@@ -39,7 +37,6 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `nova-lite` / `amazon.nova-lite-v1:0` | `amazon.nova-lite-v1:0` | Converse |
 | `nova-micro` / `amazon.nova-micro-v1:0` | `amazon.nova-micro-v1:0` | Converse |
 | `llama` / `llama3.3` / `llama-3.3-70b` | `us.meta.llama3-3-70b-instruct-v1:0` | Converse |
-| `apply-guardrail` / `guardrail` | ApplyGuardrail (not an FM) | ApplyGuardrail |
 | `llama4` / `llama4-maverick` | `us.meta.llama4-maverick-17b-instruct-v1:0` | Converse |
 | `llama4-scout` | `us.meta.llama4-scout-17b-instruct-v1:0` | Converse |
 | `gpt-oss` / `gpt-oss-120b` | `openai.gpt-oss-120b-1:0` | Converse |
@@ -56,6 +53,7 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `gemma-3-12b` / `gemma-3-12b-it` | `google.gemma-3-12b-it` | Converse |
 | `gemma-3-27b` / `gemma-3-27b-it` | `google.gemma-3-27b-it` | Converse |
 | `qwen3-32b` / `Qwen/Qwen3-32B` | `qwen.qwen3-32b-v1:0` | Converse |
+| `minilm-l12-h384` / `MiniLM-L12-H384` | in-process classifier | MiniLM |
 
 Raw Bedrock IDs and imported-model ARNs are also accepted. Unknown names return `400`.
 
@@ -123,19 +121,17 @@ Enable Meta model access in the Bedrock console. Friendly aliases default to the
 # → s3://bedrock-models-646821141010/meta/llama4-maverick-17b-instruct/model-manifest.json
 ```
 
-### Amazon Bedrock ApplyGuardrail
+### MiniLM-L12-H384 (in-process classifier)
 
-Not a foundation model. `apply-guardrail` / `guardrail` calls [`ApplyGuardrail`](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-use-independent-api.html) on the request text (no FM invoke). Create a guardrail in the Bedrock console, set repo variable `GUARDRAIL_ID` (and optional `GUARDRAIL_VERSION`, default `DRAFT`), then:
+Local BERT classifier in [`models/MiniLM-L12-H384`](models/MiniLM-L12-H384) (`microsoft/MiniLM-L12-H384-uncased`, WildGuardMix binary head). Not a Bedrock marketplace FM. The Lambda runs it in-process; assistant `content` is JSON `{"label","score","probs","tokens"}` (`unharmful` / `harmful`).
 
 ```json
-{"model": "apply-guardrail", "messages": [{"role": "user", "content": "Hello"}]}
+{"model": "minilm-l12-h384", "messages": [{"role": "user", "content": "Hello"}]}
 ```
 
-The assistant `content` is either the guardrail output text (blocked/masked) or a JSON `{"action","assessments"}` object when the guardrail takes no action.
-
 ```bash
-./scripts/upload-model-to-s3.sh apply-guardrail
-# → s3://bedrock-models-646821141010/amazon/apply-guardrail/model-manifest.json
+./scripts/upload-model-to-s3.sh MiniLM-L12-H384
+# → s3://bedrock-models-646821141010/microsoft/MiniLM-L12-H384/  (optional CI fallback)
 ```
 
 ### OpenAI GPT-OSS (marketplace)
@@ -242,8 +238,8 @@ Shared models bucket (`us-east-1`) holds optional marketplace manifests (no HF w
 The handler picks the Bedrock API per resolved model:
 
 - Marketplace models (Nova, Llama, GPT-OSS, DeepSeek, Qwen3, Ministral, Gemma, …) → **Converse**
-- `apply-guardrail` / `guardrail` → **ApplyGuardrail** (requires `GUARDRAIL_ID`)
-- Raw imported-model ARNs (`:imported-model/…`) → **InvokeModel** (no built-in friendly aliases; `Qwen/Qwen2.5-7B-Instruct` is disabled)
+- `minilm-l12-h384` / `MiniLM-L12-H384` → **in-process** MiniLM classifier
+- Raw imported-model ARNs (`:imported-model/…`) → **InvokeModel**
 
 ## API
 
@@ -367,20 +363,6 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
   -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
   -d '{
     "model": "llama",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
-    "max_tokens": 64,
-    "temperature": 0
-  }' | jq '{model, answer: .choices[0].message.content, usage}'
-```
-
-Amazon Bedrock ApplyGuardrail:
-
-```bash
-curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
-  -d '{
-    "model": "apply-guardrail",
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0

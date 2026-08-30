@@ -8,7 +8,7 @@ STAGE="$(mktemp -d)"
 cleanup() { rm -rf "${STAGE}"; }
 trap cleanup EXIT
 
-cp "${ROOT}/src/app.py" "${ROOT}/src/requirements.txt" "${ROOT}/src/run.sh" "${STAGE}/"
+cp "${ROOT}/src/app.py" "${ROOT}/src/minilm.py" "${ROOT}/src/requirements.txt" "${ROOT}/src/run.sh" "${STAGE}/"
 chmod +x "${STAGE}/run.sh"
 # Lambda is python3.12 x86_64. A host pip install on macOS ARM pulls the wrong
 # pydantic-core wheel and the function exits with Runtime.ExitError.
@@ -20,6 +20,41 @@ python3 -m pip install -q \
   -r "${ROOT}/src/requirements.txt" \
   -t "${STAGE}"
 find "${STAGE}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+MINILM_SRC="${ROOT}/models/MiniLM-L12-H384"
+MINILM_S3="${MINILM_S3_URI:-s3://bedrock-models-646821141010/microsoft/MiniLM-L12-H384}"
+if [[ ! -f "${MINILM_SRC}/model.safetensors" && ! -f "${MINILM_SRC}/weights.npz" ]]; then
+  if command -v aws >/dev/null; then
+    mkdir -p "${MINILM_SRC}"
+    aws s3 sync "${MINILM_S3}/" "${MINILM_SRC}/" --region "${AWS_REGION:-us-east-1}" \
+      --exclude "*" --include "model.safetensors" --include "weights.npz" \
+      --include "tokenizer.json" --include "config.json" || true
+  fi
+fi
+[[ -f "${MINILM_SRC}/tokenizer.json" && -f "${MINILM_SRC}/config.json" ]] \
+  || { echo "error: missing MiniLM tokenizer/config in ${MINILM_SRC}" >&2; exit 1; }
+[[ -f "${MINILM_SRC}/model.safetensors" || -f "${MINILM_SRC}/weights.npz" ]] \
+  || { echo "error: missing MiniLM weights in ${MINILM_SRC}" >&2; exit 1; }
+
+MINILM_DEST="${STAGE}/MiniLM-L12-H384"
+mkdir -p "${MINILM_DEST}"
+cp "${MINILM_SRC}/tokenizer.json" "${MINILM_SRC}/config.json" "${MINILM_DEST}/"
+# STAGE numpy is a manylinux wheel and cannot import on macOS. Prefer it on
+# Linux CI; fall back to a host venv for the float16 conversion.
+PACK_PY=""
+if PYTHONPATH="${STAGE}" python3 -c "import numpy" >/dev/null 2>&1; then
+  PACK_PY=(env PYTHONPATH="${STAGE}${PYTHONPATH:+:${PYTHONPATH}}" python3)
+elif [[ -x "${ROOT}/.venv-minilm/bin/python" ]] \
+  && "${ROOT}/.venv-minilm/bin/python" -c "import numpy" >/dev/null 2>&1; then
+  PACK_PY=("${ROOT}/.venv-minilm/bin/python")
+else
+  HOST_VENV="$(mktemp -d)"
+  python3 -m venv "${HOST_VENV}"
+  "${HOST_VENV}/bin/pip" install -q numpy
+  PACK_PY=("${HOST_VENV}/bin/python")
+fi
+"${PACK_PY[@]}" "${ROOT}/scripts/pack-minilm.py" "${MINILM_SRC}" "${MINILM_DEST}/weights.npz"
+
 
 python3 - "${STAGE}" "${DEST}" <<'PY'
 import pathlib

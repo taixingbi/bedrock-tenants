@@ -40,7 +40,6 @@ resource "aws_iam_role_policy" "inference" {
           "bedrock:InvokeModelWithResponseStream",
           "bedrock:Converse",
           "bedrock:ConverseStream",
-          "bedrock:ApplyGuardrail",
         ]
         Resource = "*"
       },
@@ -48,16 +47,26 @@ resource "aws_iam_role_policy" "inference" {
   })
 }
 
+resource "aws_s3_object" "lambda_zip" {
+  count       = var.lambda_s3_bucket == "" ? 0 : 1
+  bucket      = var.lambda_s3_bucket
+  key         = var.lambda_s3_key
+  source      = var.lambda_zip
+  source_hash = filemd5(var.lambda_zip)
+}
+
 resource "aws_lambda_function" "inference" {
   function_name    = var.function_name
-  filename         = var.lambda_zip
+  filename         = var.lambda_s3_bucket == "" ? var.lambda_zip : null
+  s3_bucket        = var.lambda_s3_bucket == "" ? null : var.lambda_s3_bucket
+  s3_key           = var.lambda_s3_bucket == "" ? null : var.lambda_s3_key
   source_code_hash = filebase64sha256(var.lambda_zip)
   role             = aws_iam_role.inference.arn
   handler          = "run.sh"
   runtime          = "python3.12"
   architectures    = ["x86_64"]
   timeout          = 60
-  memory_size      = 512
+  memory_size      = 2048
   layers           = [local.adapter_layer]
 
   environment {
@@ -65,15 +74,13 @@ resource "aws_lambda_function" "inference" {
       MODEL_ID                = var.model_id
       MODEL_MAP               = var.model_map
       API_KEY                 = var.api_key
-      GUARDRAIL_ID            = var.guardrail_id
-      GUARDRAIL_VERSION       = var.guardrail_version
       AWS_LAMBDA_EXEC_WRAPPER = "/opt/bootstrap"
       AWS_LWA_INVOKE_MODE     = "response_stream"
       AWS_LWA_PORT            = "8080"
     }
   }
 
-  depends_on = [aws_iam_role_policy.inference]
+  depends_on = [aws_iam_role_policy.inference, aws_s3_object.lambda_zip]
 }
 
 resource "aws_lambda_function_url" "inference" {
