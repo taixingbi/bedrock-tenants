@@ -43,6 +43,7 @@ The request `model` field selects which Bedrock backend to call. Built-in aliase
 | `gpt-oss-20b` | `openai.gpt-oss-20b-1:0` | Converse |
 | `gpt-oss-safeguard-20b` | `openai.gpt-oss-safeguard-20b` | Converse |
 | `gpt-oss-safeguard` / `gpt-oss-safeguard-120b` | `openai.gpt-oss-safeguard-120b` | Converse |
+| `gpt-5.6-terra` / `gpt-5.6` | `us.openai.gpt-5.6-terra` | Converse |
 | `deepseek` / `deepseek.v3.2` | `deepseek.v3.2` | Converse |
 | `deepseek-r1` | `us.deepseek.r1-v1:0` | Converse |
 | `qwen3-next-80b-a3b` / `qwen.qwen3-next-80b-a3b` | `qwen.qwen3-next-80b-a3b` | Converse |
@@ -163,6 +164,27 @@ Safeguard variants are dedicated safety / content-moderation models (not general
 ./scripts/upload-model-to-s3.sh gpt-oss-safeguard-120b
 ```
 
+### OpenAI GPT-5.6 Terra (marketplace)
+
+Balanced GPT-5.6 production model. In-region `openai.gpt-5.6-terra` is not supported on `bedrock-runtime`; aliases use the **US geo inference profile**. Enable access in the Bedrock console, then:
+
+```json
+{"model": "gpt-5.6-terra", "messages": [{"role": "user", "content": "Hello"}]}
+```
+
+| Alias | Bedrock ID |
+| --- | --- |
+| `gpt-5.6-terra` / `gpt-5.6` / `openai.gpt-5.6-terra` | `us.openai.gpt-5.6-terra` |
+| `us.openai.gpt-5.6-terra` | US geo inference profile |
+| `global.openai.gpt-5.6-terra` | Global geo inference profile |
+
+Converse ignores `temperature` / `top_p` for this family. Use `max_tokens` ≥ 256 if the model spends tokens on reasoning before the visible reply.
+
+```bash
+./scripts/upload-model-to-s3.sh gpt-5.6-terra
+# → s3://bedrock-models-646821141010/openai/gpt-5.6-terra/model-manifest.json
+```
+
 ### DeepSeek (marketplace)
 
 Enable DeepSeek access, then:
@@ -237,7 +259,7 @@ Shared models bucket (`us-east-1`) holds optional marketplace manifests (no HF w
 
 The handler picks the Bedrock API per resolved model:
 
-- Marketplace models (Nova, Llama, GPT-OSS, DeepSeek, Qwen3, Ministral, Gemma, …) → **Converse**
+- Marketplace models (Nova, Llama, GPT-OSS, GPT-5.6 Terra, DeepSeek, Qwen3, Ministral, Gemma, …) → **Converse**
 - `minilm-l12-h384` / `MiniLM-L12-H384` → **in-process** MiniLM classifier
 - Raw imported-model ARNs (`:imported-model/…`) → **InvokeModel**
 
@@ -394,6 +416,19 @@ curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
     "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
     "max_tokens": 64,
     "temperature": 0
+  }' | jq '{model, answer: .choices[0].message.content, usage}'
+```
+
+OpenAI GPT-5.6 Terra (marketplace):
+
+```bash
+curl -sS -X POST "${FUNCTION_URL}v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${INFERENCE_API_KEY}" \
+  -d '{
+    "model": "gpt-5.6-terra",
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "max_tokens": 256
   }' | jq '{model, answer: .choices[0].message.content, usage}'
 ```
 
