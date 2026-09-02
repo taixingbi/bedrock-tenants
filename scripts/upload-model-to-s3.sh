@@ -5,7 +5,6 @@
 #   ./scripts/upload-model-to-s3.sh nova-pro
 #   ./scripts/upload-model-to-s3.sh llama
 #   ./scripts/upload-model-to-s3.sh gpt-oss
-#   ./scripts/upload-model-to-s3.sh gpt-5.6-terra
 #   ./scripts/upload-model-to-s3.sh deepseek
 #   ./scripts/upload-model-to-s3.sh qwen3-next-80b-a3b
 #   ./scripts/upload-model-to-s3.sh ministral-3b
@@ -35,7 +34,6 @@ MARKETPLACE_MODELS=(
   'gpt-oss-20b|OpenAI GPT-OSS 20B|openai|gpt-oss-20b|openai.gpt-oss-20b-1:0|gpt-oss-20b, openai.gpt-oss-20b-1:0|none'
   'gpt-oss-safeguard-20b|OpenAI GPT-OSS Safeguard 20B|openai|gpt-oss-safeguard-20b|openai.gpt-oss-safeguard-20b|gpt-oss-safeguard-20b, openai.gpt-oss-safeguard-20b|none'
   'gpt-oss-safeguard|gpt-oss-safeguard-120b|OpenAI GPT-OSS Safeguard 120B|openai|gpt-oss-safeguard-120b|openai.gpt-oss-safeguard-120b|gpt-oss-safeguard, gpt-oss-safeguard-120b, openai.gpt-oss-safeguard-120b|none'
-  'gpt-5.6-terra|gpt-5.6|GPT-5.6-Terra|OpenAI GPT-5.6 Terra|openai|gpt-5.6-terra|openai.gpt-5.6-terra|gpt-5.6-terra, gpt-5.6, openai.gpt-5.6-terra, us.openai.gpt-5.6-terra|us+global'
   'deepseek|deepseek-v3.2|DeepSeek V3.2|deepseek|deepseek-v3.2|deepseek.v3.2|deepseek, deepseek-v3.2, deepseek.v3.2|none'
   'deepseek-r1|DeepSeek R1|deepseek|deepseek-r1-v1|deepseek.r1-v1:0|deepseek-r1, us.deepseek.r1-v1:0|us'
   'qwen3-next-80b-a3b|Qwen3 Next 80B A3B|qwen|qwen3-next-80b-a3b|qwen.qwen3-next-80b-a3b|qwen3-next-80b-a3b, qwen.qwen3-next-80b-a3b|none'
@@ -54,7 +52,7 @@ Usage: ./scripts/upload-model-to-s3.sh <model> [options]
 
 Models:
   nova-lite / nova-pro / llama / llama4 / llama4-maverick / llama4-scout
-  gpt-oss / gpt-oss-20b / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / gpt-5.6-terra / deepseek / deepseek-r1
+  gpt-oss / gpt-oss-20b / gpt-oss-safeguard-20b / gpt-oss-safeguard-120b / deepseek / deepseek-r1
   qwen3-next-80b-a3b / qwen3-32b
   ministral-3b / ministral-8b / ministral-14b
   gemma-3-4b / gemma-3-12b / gemma-3-27b

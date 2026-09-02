@@ -2,8 +2,8 @@
 # Accept the Bedrock marketplace agreement for a foundation model (current
 # account, or ACCOUNT=a|b|c|d).
 #
-#   ./scripts/enable-bedrock-model.sh gpt-5.6-terra
-#   ACCOUNT=a ./scripts/enable-bedrock-model.sh gpt-5.6-terra
+#   ./scripts/enable-bedrock-model.sh qwen3-32b
+#   ACCOUNT=a ./scripts/enable-bedrock-model.sh qwen3-32b
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
@@ -13,9 +13,6 @@ die() { echo "error: $*" >&2; exit 1; }
 # Friendly smoke/upload names → Bedrock foundation model ID (not a CRIS profile).
 resolve_model_id() {
   case "$1" in
-    gpt-5.6-terra|gpt-5.6|GPT-5.6-Terra|openai.gpt-5.6-terra|us.openai.gpt-5.6-terra|global.openai.gpt-5.6-terra)
-      echo "openai.gpt-5.6-terra"
-      ;;
     qwen3-32b|qwen.qwen3-32b-v1:0|Qwen/Qwen3-32B)
       echo "qwen.qwen3-32b-v1:0"
       ;;

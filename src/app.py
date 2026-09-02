@@ -109,19 +109,6 @@ _BUILTIN_MODEL_ALIASES: dict[str, str] = {
         "openai.gpt-oss-safeguard-120b",
         to="openai.gpt-oss-safeguard-120b",
     ),
-    # OpenAI GPT-5.6 Terra (marketplace; bedrock-runtime needs a CRIS profile).
-    **_alias_entries(
-        "gpt-5.6-terra",
-        "gpt-5.6",
-        "GPT-5.6-Terra",
-        "openai.gpt-5.6-terra",
-        "us.openai.gpt-5.6-terra",
-        to="us.openai.gpt-5.6-terra",
-    ),
-    **_alias_entries(
-        "global.openai.gpt-5.6-terra",
-        to="global.openai.gpt-5.6-terra",
-    ),
     # DeepSeek (marketplace).
     **_alias_entries("deepseek", "deepseek-v3.2", "deepseek.v3.2", to="deepseek.v3.2"),
     **_alias_entries(
@@ -198,10 +185,6 @@ def _is_imported_model(model_id: str) -> bool:
 
 def _is_minilm(model_id: str) -> bool:
     return model_id == MINILM_ID
-
-
-def _is_gpt56(model_id: str) -> bool:
-    return ".gpt-5.6-" in model_id
 
 
 def _load_model_map() -> dict[str, str]:
@@ -461,12 +444,10 @@ def _converse_args(
 ) -> dict[str, Any]:
     system, rest = _split_system(messages)
     inference_config: dict[str, Any] = {"maxTokens": max_tokens}
-    # GPT-5.6 rejects sampling knobs on Converse; only maxTokens is accepted.
-    if not _is_gpt56(bedrock_model_id):
-        if temperature is not None:
-            inference_config["temperature"] = temperature
-        if top_p is not None:
-            inference_config["topP"] = top_p
+    if temperature is not None:
+        inference_config["temperature"] = temperature
+    if top_p is not None:
+        inference_config["topP"] = top_p
 
     args: dict[str, Any] = {
         "modelId": bedrock_model_id,

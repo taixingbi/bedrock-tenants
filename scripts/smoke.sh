@@ -21,7 +21,6 @@ MODELS=(
   llama4
   llama4-maverick
   minilm-l12-h384
-  gpt-5.6-terra
   gpt-oss
   gpt-oss-safeguard-20b
   gpt-oss-safeguard-120b
