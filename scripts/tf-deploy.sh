@@ -69,6 +69,33 @@ export TF_VAR_api_key="${API_KEY}"
 export TF_VAR_lambda_s3_bucket="${BUCKET}"
 export TF_VAR_lambda_s3_key="${FUNCTION_NAME}/lambda.zip"
 
+# SAM / Function URL creation can add these statement IDs outside Terraform.
+# Import them so apply does not 409 on AddPermission.
+adopt_lambda_permission() {
+  local addr="$1"
+  local sid="$2"
+  if terraform state show -no-color "${addr}" >/dev/null 2>&1; then
+    return 0
+  fi
+  local policy
+  policy="$(aws lambda get-policy --function-name "${FUNCTION_NAME}" --region "${REGION}" --query Policy --output text 2>/dev/null || true)"
+  [[ -n "${policy}" && "${policy}" != "None" ]] || return 0
+  if python3 -c '
+import json, sys
+policy = json.loads(sys.argv[1])
+stmts = policy.get("Statement", [])
+if isinstance(stmts, dict):
+    stmts = [stmts]
+sys.exit(0 if sys.argv[2] in {s.get("Sid") for s in stmts} else 1)
+' "${policy}" "${sid}"; then
+    echo "Importing existing Lambda permission ${sid}…"
+    terraform import -input=false -no-color "${addr}" "${FUNCTION_NAME}/${sid}"
+  fi
+}
+
+adopt_lambda_permission aws_lambda_permission.function_url FunctionURLAllowPublicAccess
+adopt_lambda_permission aws_lambda_permission.function_invoke FunctionURLAllowInvoke
+
 terraform apply -input=false -auto-approve
 
 echo
