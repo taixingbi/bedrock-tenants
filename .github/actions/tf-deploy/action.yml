@@ -47,6 +47,13 @@ runs:
         role-session-name: ${{ inputs.role-session-name }}
         aws-region: ${{ env.AWS_REGION }}
 
+    # MiniLM weights live in the management-account models bucket and are not
+    # in git. Package while still on the OIDC role; OrganizationAccountAccessRole
+    # in A–D cannot s3:ListBucket on that bucket.
+    - name: Package Lambda
+      shell: bash
+      run: ./scripts/package-lambda.sh terraform/.build/lambda.zip
+
     - name: Assume member role
       if: ${{ inputs.member-role-arn != '' }}
       uses: aws-actions/configure-aws-credentials@v6
@@ -59,4 +66,6 @@ runs:
 
     - name: Deploy
       shell: bash
+      env:
+        SKIP_PACKAGE: "1"
       run: ./scripts/tf-deploy.sh

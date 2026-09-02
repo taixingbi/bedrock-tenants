@@ -27,6 +27,11 @@ export API_KEY
 command -v aws >/dev/null || die "aws CLI required"
 command -v terraform >/dev/null || die "terraform required"
 
+# Package with current (management) credentials so MiniLM can be pulled from
+# the shared models bucket. Member OrganizationAccountAccessRole cannot list it.
+echo "Packaging Lambda…"
+"${ROOT}/scripts/package-lambda.sh" "${ROOT}/terraform/.build/lambda.zip"
+
 ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 echo "Assuming ${ROLE_ARN}…"
 creds="$(aws sts assume-role \
@@ -38,7 +43,7 @@ read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<<"${creds}"
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION="${REGION}"
 
 echo "Deploying ${FUNCTION_NAME} to ${ACCOUNT_ID} (${REGION})…"
-"${ROOT}/scripts/tf-deploy.sh"
+SKIP_PACKAGE=1 "${ROOT}/scripts/tf-deploy.sh"
 
 FUNCTION_URL="$(aws lambda get-function-url-config \
   --region "${REGION}" \

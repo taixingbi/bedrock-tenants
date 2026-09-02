@@ -8,6 +8,13 @@ STAGE="$(mktemp -d)"
 cleanup() { rm -rf "${STAGE}"; }
 trap cleanup EXIT
 
+"${ROOT}/scripts/fetch-minilm-weights.sh"
+MINILM_SRC="${ROOT}/models/MiniLM-L12-H384"
+[[ -f "${MINILM_SRC}/tokenizer.json" && -f "${MINILM_SRC}/config.json" ]] \
+  || { echo "error: missing MiniLM tokenizer/config in ${MINILM_SRC}" >&2; exit 1; }
+[[ -f "${MINILM_SRC}/model.safetensors" || -f "${MINILM_SRC}/weights.npz" ]] \
+  || { echo "error: missing MiniLM weights in ${MINILM_SRC}" >&2; exit 1; }
+
 cp "${ROOT}/src/app.py" "${ROOT}/src/minilm.py" "${ROOT}/src/requirements.txt" "${ROOT}/src/run.sh" "${STAGE}/"
 chmod +x "${STAGE}/run.sh"
 # Lambda is python3.12 x86_64. A host pip install on macOS ARM pulls the wrong
@@ -20,21 +27,6 @@ python3 -m pip install -q \
   -r "${ROOT}/src/requirements.txt" \
   -t "${STAGE}"
 find "${STAGE}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-
-MINILM_SRC="${ROOT}/models/MiniLM-L12-H384"
-MINILM_S3="${MINILM_S3_URI:-s3://bedrock-models-646821141010/microsoft/MiniLM-L12-H384}"
-if [[ ! -f "${MINILM_SRC}/model.safetensors" && ! -f "${MINILM_SRC}/weights.npz" ]]; then
-  if command -v aws >/dev/null; then
-    mkdir -p "${MINILM_SRC}"
-    aws s3 sync "${MINILM_S3}/" "${MINILM_SRC}/" --region "${AWS_REGION:-us-east-1}" \
-      --exclude "*" --include "model.safetensors" --include "weights.npz" \
-      --include "tokenizer.json" --include "config.json" || true
-  fi
-fi
-[[ -f "${MINILM_SRC}/tokenizer.json" && -f "${MINILM_SRC}/config.json" ]] \
-  || { echo "error: missing MiniLM tokenizer/config in ${MINILM_SRC}" >&2; exit 1; }
-[[ -f "${MINILM_SRC}/model.safetensors" || -f "${MINILM_SRC}/weights.npz" ]] \
-  || { echo "error: missing MiniLM weights in ${MINILM_SRC}" >&2; exit 1; }
 
 MINILM_DEST="${STAGE}/MiniLM-L12-H384"
 mkdir -p "${MINILM_DEST}"

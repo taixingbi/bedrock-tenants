@@ -19,8 +19,13 @@ FUNCTION_NAME="${FUNCTION_NAME:-bedrock-inference-mvp}"
 REGION="${AWS_REGION:-us-east-1}"
 ZIP="${ROOT}/terraform/.build/lambda.zip"
 
-echo "Packaging Lambda…"
-"${ROOT}/scripts/package-lambda.sh" "${ZIP}"
+if [[ "${SKIP_PACKAGE:-}" == "1" ]]; then
+  [[ -f "${ZIP}" ]] || { echo "error: SKIP_PACKAGE=1 but missing ${ZIP}" >&2; exit 1; }
+  echo "Using existing Lambda zip ${ZIP}"
+else
+  echo "Packaging Lambda…"
+  "${ROOT}/scripts/package-lambda.sh" "${ZIP}"
+fi
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="bedrock-inference-tfstate-${ACCOUNT_ID}"
