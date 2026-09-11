@@ -315,6 +315,12 @@ export API_KEY='your-shared-secret'
 ./scripts/tf-deploy.sh
 ```
 
+Tear down Lambdas plus the org OU and member accounts A–D (closes those accounts):
+
+```bash
+./scripts/tf-destroy.sh
+```
+
 ## Call the API
 
 Example (`ministral-8b`):

@@ -11,7 +11,7 @@ Organization (this account)
     └── bedrock-tenant-d   same Terraform Lambda
 ```
 
-Creating an Organization is one-way for the management account.
+Tear down with `./scripts/tf-destroy.sh` (management-account creds): Lambdas in this account and A–D, then **close** A–D (`close_on_deletion = true`), then the OU and Organization. Closed accounts stay `PENDING_CLOSURE` for ~90 days; those root emails cannot be reused until AWS finishes. The management account remains. If the OU/org still have pending members, AWS rejects deleting them until then.
 
 Member-account emails are Terraform defaults in [`terraform/org/variables.tf`](../terraform/org/variables.tf):
 
@@ -82,4 +82,10 @@ aws lambda get-function-url-config \
   --function-name bedrock-inference-mvp \
   --query FunctionUrl \
   --output text
+```
+
+## 4. Destroy
+
+```bash
+./scripts/tf-destroy.sh
 ```

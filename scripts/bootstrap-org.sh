@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Terraform-apply the Organization, OU bedrock-inference-dev, and accounts A–D.
 # Emails live in terraform/org/variables.tf (override with TF_VAR_email_*).
-# Run with management-account credentials. Creating an Organization is one-way.
+# Run with management-account credentials. Tear down with ./scripts/tf-destroy.sh
+# (closes A–D; those root emails cannot be reused until AWS finishes closure).
 #
 # Usage:
 #   ./scripts/bootstrap-org.sh
