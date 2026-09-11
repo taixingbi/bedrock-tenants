@@ -83,6 +83,7 @@ aws iam put-role-policy \
         "organizations:CreateOrganizationalUnit",
         "organizations:UpdateOrganizationalUnit",
         "organizations:CreateAccount",
+        "organizations:CloseAccount",
         "organizations:MoveAccount",
         "organizations:Describe*",
         "organizations:List*",

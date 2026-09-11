@@ -99,6 +99,26 @@ member_id() {
     --output text
 }
 
+# Org-created members cannot RemoveAccountFromOrganization (no standalone
+# billing/contact). CloseAccount, then drop them from Terraform state.
+close_member_account() {
+  local addr="$1"
+  local account_id="$2"
+  local acct_status
+  [[ -n "${account_id}" && "${account_id}" != "None" && "${account_id}" != "null" ]] || return 0
+  acct_status="$(aws organizations describe-account --account-id "${account_id}" --query 'Account.Status' --output text 2>/dev/null || echo MISSING)"
+  echo "Account ${account_id} (${addr}) status=${acct_status}"
+  if [[ "${acct_status}" == "ACTIVE" ]]; then
+    echo "Closing ${account_id} via organizations:CloseAccount…"
+    aws organizations close-account --account-id "${account_id}"
+  fi
+  cd "${ORG_DIR}"
+  if terraform state show -no-color "${addr}" >/dev/null 2>&1; then
+    echo "Removing ${addr} from Terraform state…"
+    terraform state rm -lock=true "${addr}" >/dev/null
+  fi
+}
+
 ensure_zip
 
 echo "Initializing org state and applying close_on_deletion=true…"
@@ -145,8 +165,9 @@ clear_assumed
 destroy_lambda "management"
 
 echo
-echo "======== Destroy Organization, OU, and member accounts ========"
-echo "Closing A–D (close_on_deletion=true). Recreate needs unused root emails."
+echo "======== Close member accounts A–D (CloseAccount), then OU / Organization ========"
+echo "Org-created accounts cannot leave the org as standalone; they must be closed."
+echo "Recreate needs unused root emails. Closed accounts stay PENDING_CLOSURE ~90 days."
 clear_assumed
 cd "${ORG_DIR}"
 terraform init -input=false -reconfigure \
@@ -156,12 +177,10 @@ terraform init -input=false -reconfigure \
 export TF_VAR_aws_region="${REGION}"
 export TF_VAR_role_name="${ROLE_NAME}"
 
-# Close members first so the OU is empty enough to delete when AWS allows it.
-terraform destroy -input=false -auto-approve \
-  -target=aws_organizations_account.a \
-  -target=aws_organizations_account.b \
-  -target=aws_organizations_account.c \
-  -target=aws_organizations_account.d
+close_member_account aws_organizations_account.a "${ID_A}"
+close_member_account aws_organizations_account.b "${ID_B}"
+close_member_account aws_organizations_account.c "${ID_C}"
+close_member_account aws_organizations_account.d "${ID_D}"
 
 if ! terraform destroy -input=false -auto-approve; then
   echo >&2
