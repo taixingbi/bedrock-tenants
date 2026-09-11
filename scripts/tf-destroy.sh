@@ -95,7 +95,7 @@ clear_assumed() {
 member_id() {
   local email="$1" name="$2"
   aws organizations list-accounts \
-    --query "Accounts[?(Email=='${email}' || Name=='${name}') && Status!='SUSPENDED'].Id | [0]" \
+    --query "Accounts[?(Email=='${email}' || Name=='${name}')].Id | [0]" \
     --output text
 }
 
@@ -119,9 +119,28 @@ close_member_account() {
   fi
 }
 
+# Closed accounts still occupy the OU; DeleteOrganizationalUnit requires none.
+move_account_to_root() {
+  local account_id="$1"
+  local root_id parent
+  [[ -n "${account_id}" && "${account_id}" != "None" && "${account_id}" != "null" ]] || return 0
+  root_id="$(aws organizations list-roots --query 'Roots[0].Id' --output text)"
+  parent="$(aws organizations list-parents --child-id "${account_id}" --query 'Parents[0].Id' --output text 2>/dev/null || true)"
+  [[ -n "${parent}" && "${parent}" != "None" ]] || return 0
+  if [[ "${parent}" == "${root_id}" ]]; then
+    echo "Account ${account_id} already under root ${root_id}"
+    return 0
+  fi
+  echo "Moving ${account_id} from ${parent} to root ${root_id}…"
+  aws organizations move-account \
+    --account-id "${account_id}" \
+    --source-parent-id "${parent}" \
+    --destination-parent-id "${root_id}"
+}
+
 ensure_zip
 
-echo "Initializing org state and applying close_on_deletion=true…"
+echo "Initializing org state…"
 cd "${ORG_DIR}"
 terraform init -input=false -reconfigure \
   -backend-config="bucket=${MGMT_BUCKET}" \
@@ -129,7 +148,6 @@ terraform init -input=false -reconfigure \
   -backend-config="region=${REGION}"
 export TF_VAR_aws_region="${REGION}"
 export TF_VAR_role_name="${ROLE_NAME}"
-terraform apply -input=false -auto-approve
 
 EMAIL_A="${TF_VAR_email_a:-tb_bedrock_a@gmail.com}"
 EMAIL_B="${TF_VAR_email_b:-tb_bedrock_b@gmail.com}"
@@ -182,9 +200,20 @@ close_member_account aws_organizations_account.b "${ID_B}"
 close_member_account aws_organizations_account.c "${ID_C}"
 close_member_account aws_organizations_account.d "${ID_D}"
 
+echo "Moving closed accounts to the organization root so the OU can be deleted…"
+move_account_to_root "${ID_A}"
+move_account_to_root "${ID_B}"
+move_account_to_root "${ID_C}"
+move_account_to_root "${ID_D}"
+
+if terraform state show -no-color aws_organizations_organizational_unit.inference >/dev/null 2>&1; then
+  terraform destroy -input=false -auto-approve \
+    -target=aws_organizations_organizational_unit.inference
+fi
+
 if ! terraform destroy -input=false -auto-approve; then
   echo >&2
-  echo "error: OU/Organization destroy failed. Closed member accounts stay in the org as PENDING_CLOSURE (~90 days); AWS will not delete a non-empty OU or Organization until then." >&2
+  echo "error: Organization destroy failed. Closed member accounts stay in the org as PENDING_CLOSURE (~90 days); AWS will not DeleteOrganization until they are gone. The empty OU is removed when possible; the management account remains." >&2
   exit 1
 fi
 
